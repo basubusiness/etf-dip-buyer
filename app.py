@@ -77,15 +77,28 @@ if not df.empty:
     if current_price < current_ma200: 
         score += 30  # Weighting for Price below Trend
     
-    # 6. UI
+   # 6. UI DISPLAY
     c1, c2, c3 = st.columns(3)
     c1.metric("Current Price", f"${current_price:,.2f}")
     c2.metric("Market Sentiment", f"{fg_val:.0f}", help=fg_text)
-    c3.metric("RSI Score", f"{rsi:.1f}")
+    # Changed 'rsi' to 'rsi_val' to match the logic section
+    c3.metric("RSI Score", f"{rsi_val:.1f}")
 
-    st.subheader(f"Strategy: {'🔥 AGGRESSIVE BUY' if score > 70 else '⚖️ DOLLAR COST AVERAGE'}")
+    st.divider()
+
+    # DECISION METER
+    if score > 70:
+        st.success("🔥 **STRATEGY: AGGRESSIVE BUY**")
+        multiplier = 2.0
+    elif score > 30:
+        st.info("⚖️ **STRATEGY: DOLLAR COST AVERAGE**")
+        multiplier = 1.0
+    else:
+        st.warning("⚠️ **STRATEGY: MINIMUM EXPOSURE**")
+        multiplier = 0.5
     
-    multiplier = 2 if score > 70 else (1 if score > 30 else 0.5)
     st.write(f"**Recommended Buy today:** `${baseline * multiplier:,.2f}`")
     
-    st.line_chart(df[['Close', 'MA200']])
+    # Updated chart to use the calculated MA200 from our logic
+    df['MA200_Plot'] = ma200_series 
+    st.line_chart(df[['Close', 'MA200_Plot']])
