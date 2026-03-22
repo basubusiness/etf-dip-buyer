@@ -3,13 +3,10 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-# ----------------------------------
-# INIT
-# ----------------------------------
 ticker = None
 
-st.set_page_config(page_title="ETF Dip-Terminal v2.1", layout="wide")
-st.title("🏹 ETF Dip-Terminal v2.1")
+st.set_page_config(page_title="ETF Dip-Terminal v2.2", layout="wide")
+st.title("🏹 ETF Dip-Terminal v2.2")
 
 # ----------------------------------
 # SIDEBAR
@@ -37,20 +34,6 @@ with st.sidebar:
     baseline = st.number_input("Monthly Investment", value=1000)
 
 # ----------------------------------
-# SENTIMENT ENGINE (WITH FALLBACK)
-# ----------------------------------
-def get_fear_greed():
-    try:
-        url = "https://production.dataviz.cnn.io/index/feargreed/graphdata"
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        if res.status_code == 200:
-            return float(res.json()["fear_and_greed"]["score"]), "live"
-    except:
-        pass
-
-    return None, "failed"
-
-# ----------------------------------
 # DATA
 # ----------------------------------
 def get_data(symbol):
@@ -60,6 +43,25 @@ def get_data(symbol):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df
+
+# ----------------------------------
+# SENTIMENT
+# ----------------------------------
+def get_fear_greed():
+    try:
+        url = "https://production.dataviz.cnn.io/index/feargreed/graphdata"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            return float(res.json()["fear_and_greed"]["score"]), True
+    except:
+        pass
+    return None, False
+
+def get_vix():
+    try:
+        return yf.Ticker("^VIX").fast_info["last_price"]
+    except:
+        return None
 
 # ----------------------------------
 # MAIN
@@ -73,49 +75,6 @@ if ticker:
 
     yt = yf.Ticker(ticker)
 
-    # -----------------------------
-    # FEAR & GREED
-    # -----------------------------
-    fg_val, fg_status = get_fear_greed()
-
-    if fg_status == "failed":
-        st.warning("⚠️ Unable to fetch Fear & Greed index")
-
-        st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
-
-        fg_val = st.number_input(
-            "Enter Fear & Greed Index (0–100)",
-            min_value=0,
-            max_value=100,
-            value=50
-        )
-
-    # -----------------------------
-    # PE RATIO
-    # -----------------------------
-    try:
-        pe_ratio = yt.info.get("trailingPE") or yt.info.get("forwardPE")
-    except:
-        pe_ratio = None
-
-    if not pe_ratio:
-        st.warning("⚠️ P/E not available")
-
-        if len(user_input) == 12:
-            st.markdown(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={user_input}")
-
-        pe_ratio = st.number_input(
-            "Enter P/E Ratio (optional)",
-            min_value=0.0,
-            value=0.0
-        )
-
-        if pe_ratio == 0:
-            pe_ratio = None
-
-    # -----------------------------
-    # CALCULATIONS
-    # -----------------------------
     close = df["Close"]
     cur_p = float(close.iloc[-1])
 
@@ -143,9 +102,48 @@ if ticker:
         ma_slope = 0
 
     # ----------------------------------
+    # FETCH SIGNALS
+    # ----------------------------------
+    fg_val, fg_live = get_fear_greed()
+    vix_val = get_vix()
+
+    # ----------------------------------
+    # INPUT PANEL (COLLAPSED)
+    # ----------------------------------
+    with st.expander("⚙️ Data Inputs (Optional)", expanded=False):
+
+        if not fg_live:
+            st.warning("F&G not available")
+            st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
+
+            fg_val = st.number_input("Enter F&G (0–100)", 0, 100, 50)
+            st.success("Using manual F&G input")
+
+        if fg_val is None:
+            fg_val = 50  # conservative default
+
+        try:
+            pe_ratio = yt.info.get("trailingPE") or yt.info.get("forwardPE")
+        except:
+            pe_ratio = None
+
+        if not pe_ratio:
+            st.warning("P/E not available")
+
+            if len(user_input) == 12:
+                st.markdown(f"https://www.justetf.com/en/etf-profile.html?isin={user_input}")
+
+            pe_input = st.number_input("Enter P/E (optional)", 0.0, value=0.0)
+
+            if pe_input > 0:
+                pe_ratio = pe_input
+                st.success("Using manual P/E input")
+
+    # ----------------------------------
     # SCORING
     # ----------------------------------
     score = 0
+
     if fg_val < 35: score += 40
     if rsi_val < 40: score += 30
     if cur_p < ma200_val: score += 30
@@ -159,36 +157,61 @@ if ticker:
 
     if final_score >= 70:
         st.success("🔥 AGGRESSIVE BUY")
+        st.write(f"Driven by fear ({fg_val:.0f}) + oversold RSI ({rsi_val:.1f})")
     elif final_score >= 40:
         st.info("⚖️ STEADY BUY")
     else:
         st.warning("⚠️ CAUTION")
 
+    st.divider()
+
     # ----------------------------------
-    # SIGNAL CARDS
+    # SIGNALS
     # ----------------------------------
     st.subheader("🧠 Market Signals")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("### 😨 Sentiment")
-        st.write(f"Fear & Greed: {fg_val}")
+        st.markdown("### 😨 Fear & Greed")
+        st.write(f"{fg_val:.0f}")
+
+        if fg_val < 35:
+            st.success("Fear → better entry zone")
+        elif fg_val > 65:
+            st.warning("Greed → expensive market")
 
     with col2:
+        st.markdown("### 📊 VIX")
+        if vix_val:
+            st.write(f"{vix_val:.1f}")
+
+            if vix_val > 30:
+                st.success("High volatility → fear")
+            elif vix_val < 15:
+                st.warning("Low volatility → complacency")
+
+    col3, col4 = st.columns(2)
+
+    with col3:
         st.markdown("### 📉 RSI")
         st.write(f"{rsi_val:.1f}")
 
-    # ----------------------------------
-    # CONTEXT
-    # ----------------------------------
-    st.subheader("📎 Context")
+        if rsi_val < 35:
+            st.success("Oversold → rebound potential")
 
-    if pe_ratio:
-        st.write(f"P/E: {pe_ratio:.2f}")
-    else:
-        st.write("P/E not provided")
+    with col4:
+        st.markdown("### 📈 Trend")
+        st.write(f"{ma_slope:.2f}%")
 
+        if ma_slope > 0:
+            st.success("Uptrend intact")
+        else:
+            st.warning("Weak trend")
+
+    # ----------------------------------
+    # CHART
+    # ----------------------------------
     st.subheader("📊 Price")
     st.line_chart(close)
 
