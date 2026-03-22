@@ -5,8 +5,8 @@ import requests
 from datetime import datetime
 
 # 1. SETUP & THEME
-st.set_page_config(page_title="ETF Dip-Terminal v1.2", layout="wide")
-st.title("🏹 ETF Universal Dip-Terminal v1.2")
+st.set_page_config(page_title="ETF Dip-Terminal v1.3", layout="wide")
+st.title("🏹 ETF Universal Dip-Terminal v1.3")
 
 # 2. SIDEBAR
 with st.sidebar:
@@ -42,7 +42,7 @@ with st.sidebar:
         This helps reduce your average buying cost over time.
         """)
 
-# 3. SENTIMENT ENGINE (FIXED VIX MAPPING)
+# 3. SENTIMENT ENGINE
 @st.cache_data(ttl=300)
 def get_market_sentiment():
     try:
@@ -56,7 +56,6 @@ def get_market_sentiment():
     try:
         vix = yf.Ticker("^VIX").fast_info['last_price']
 
-        # Non-linear realistic mapping
         if vix < 13: fg_val = 80
         elif vix < 18: fg_val = 65
         elif vix < 23: fg_val = 50
@@ -90,6 +89,13 @@ if ticker:
         currency = "USD"
         pe_ratio = None
 
+    # 🔹 Market proxy P/E (always attempt)
+    proxy_pe = None
+    try:
+        proxy_pe = yf.Ticker("SPY").info.get("trailingPE")
+    except:
+        pass
+
     calc_df = yf.download(ticker, period="1y", interval="1d", progress=False)
     if not calc_df.empty:
         if isinstance(calc_df.columns, pd.MultiIndex): 
@@ -112,7 +118,7 @@ if ticker:
         rolling_max = close_calc.cummax()
         drawdown = (cur_p / rolling_max.iloc[-1] - 1) * 100
 
-        # Normalized slope (%)
+        # Slope
         if len(ma200_series.dropna()) > 20:
             prev = ma200_series.iloc[-20]
             ma_slope = ((ma200_series.iloc[-1] - prev) / prev) * 100
@@ -121,27 +127,16 @@ if ticker:
 
         # DIP SCORE
         dip_score = 0
+        if drawdown < -20: dip_score += 30
+        elif drawdown < -10: dip_score += 20
+        elif drawdown < -5: dip_score += 10
+        if drawdown < -15: dip_score += 10
 
-        if drawdown < -20:
-            dip_score += 30
-        elif drawdown < -10:
-            dip_score += 20
-        elif drawdown < -5:
-            dip_score += 10
+        if ma_slope > 0: dip_score += 40
+        elif ma_slope > -0.5: dip_score += 15
 
-        # Deep dip bonus
-        if drawdown < -15:
-            dip_score += 10
-
-        if ma_slope > 0:
-            dip_score += 40
-        elif ma_slope > -0.5:
-            dip_score += 15
-
-        if cur_p > ma50_val:
-            dip_score += 30
-        elif cur_p > ma200_val:
-            dip_score += 15
+        if cur_p > ma50_val: dip_score += 30
+        elif cur_p > ma200_val: dip_score += 15
 
         # ORIGINAL SCORE
         score = 0
@@ -149,7 +144,6 @@ if ticker:
         if rsi_val < 40: score += 30
         if cur_p < ma200_val: score += 30
 
-        # FINAL SCORE (rebalanced)
         final_score = 0.65 * score + 0.35 * dip_score
 
         # UI
@@ -163,16 +157,27 @@ if ticker:
         c3.metric("RSI (Momentum)", f"{rsi_val:.1f}")
         c3.markdown("🔗 [RSI Theory ↗](https://www.investopedia.com/terms/r/rsi.asp)")
 
-        # P/E handling + ETF fallback
+        # --- UPDATED VALUATION BLOCK ---
         if pe_ratio:
-            c4.metric("P/E Ratio", f"{pe_ratio:.2f}")
+            c4.metric("P/E (ETF)", f"{pe_ratio:.2f}")
+            c4.markdown("ℹ️ Based on ETF holdings (may be delayed)")
         else:
-            c4.metric("P/E Ratio", "N/A")
-            if len(user_input) == 12:  # ISIN likely
+            c4.metric("P/E (ETF)", "N/A")
+            if len(user_input) == 12:
                 justetf_link = f"https://www.justetf.com/en/etf-profile.html?isin={user_input}"
-                c4.markdown(f"🔗 [View ETF Fundamentals ↗]({justetf_link})")
+                c4.markdown(f"🔗 [ETF Fundamentals ↗]({justetf_link})")
             else:
                 c4.markdown("🔗 [PE Explained ↗](https://www.investopedia.com/terms/p/price-earningsratio.asp)")
+
+        # 🔹 Proxy valuation (clearly secondary)
+        if proxy_pe:
+            st.markdown(
+                f"""
+                **🌍 Market Valuation (Proxy – S&P 500): {proxy_pe:.1f}**  
+                🔗 [View S&P 500 ↗](https://finance.yahoo.com/quote/SPY)  
+                ℹ️ Used as a broad market reference when ETF valuation is unavailable
+                """
+            )
 
         st.divider()
 
@@ -183,37 +188,23 @@ if ticker:
         d2.metric("Trend Slope (%)", f"{ma_slope:.2f}")
         d3.metric("Dip Score", f"{dip_score}/100")
 
-        # ✅ SIMPLIFIED EXPLANATION
         with st.expander("📝 How to Read This (Simple)", expanded=True):
             st.write(f"""
             Think of this like a **market weather report**:
 
-            **🌡️ Sentiment ({fg_val:.0f}/100):**  
-            Low = fear (better buying opportunities)  
-            High = greed (more expensive market)
+            **🌡️ Sentiment ({fg_val:.0f}/100)** → Fear vs greed  
+            **📉 RSI ({rsi_val:.1f})** → Short-term exhaustion  
+            **📉 Drawdown ({drawdown:.1f}%)** → Size of dip  
+            **📈 Trend ({ma_slope:.2f}%)** → Market strength  
 
-            **📉 RSI ({rsi_val:.1f}):**  
-            Below 30 = recently fallen → may bounce  
-            Above 70 = recently risen → may cool  
+            👉 Final Score = {final_score:.1f}  
+            Combines short-term + long-term signals
 
-            **📉 Drawdown ({drawdown:.1f}%):**  
-            Bigger drop = better opportunity (but higher risk)
-
-            **📈 Trend ({ma_slope:.2f}%):**  
-            Positive = healthy market  
-            Negative = weakening market  
-
-            **🎯 Final Score = {final_score:.1f}**
-            Combines short-term signals + long-term strength
-
-            👉 Goal:  
-            Buy dips in strong markets  
-            Avoid dips in weak markets
+            Goal: Buy dips in strong markets, avoid weak ones.
             """)
 
         st.divider()
 
-        # FINAL DECISION
         if final_score >= 70:
             st.success(f"🔥 **AGGRESSIVE BUY** | Invest `{baseline * 2:,.2f} {currency}`")
         elif final_score >= 40:
