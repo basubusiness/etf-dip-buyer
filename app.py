@@ -5,10 +5,10 @@ import requests
 from datetime import datetime
 
 # 1. SETUP & THEME
-st.set_page_config(page_title="ETF Dip-Terminal v1.0", layout="wide")
-st.title("🏹 ETF Universal Dip-Terminal v1.0")
+st.set_page_config(page_title="ETF Dip-Terminal v1.1", layout="wide")
+st.title("🏹 ETF Universal Dip-Terminal v1.1")
 
-# 2. SIDEBAR - FIXED: Added empty search handling
+# 2. SIDEBAR
 with st.sidebar:
     st.header("Search & Settings")
     user_input = st.text_input("Enter Ticker, Name, or ISIN", value="VOO").strip()
@@ -73,12 +73,11 @@ if ticker:
     fg_val, fg_label, fg_url = get_market_sentiment()
     yt = yf.Ticker(ticker)
     
-    # Currency and Fundamental Fetch
+    # Currency & PE (context only)
     try:
         f_info = yt.fast_info
         currency = f_info.get('currency', 'USD')
-        # (1) FIXED P/E Fetch for ETFs: Checking trailing then forward
-        pe_ratio = yt.info.get('trailingPE') or yt.info.get('forwardPE') or yt.info.get('priceToEarnings')
+        pe_ratio = yt.info.get('trailingPE') or yt.info.get('forwardPE')
     except:
         currency = "USD"
         pe_ratio = None
@@ -96,36 +95,52 @@ if ticker:
         ma200_val = ma200_series.iloc[-1]
         ma50_val = close_calc.rolling(window=50).mean().iloc[-1]
 
-        # RSI Calculation
+        # RSI
         delta = close_calc.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rsi_val = float((100 - (100 / (1 + (gain / loss.replace(0, 0.001))))).iloc[-1])
 
-        # Drawdown & Trend Slope
+        # Drawdown
         rolling_max = close_calc.cummax()
         drawdown = (cur_p / rolling_max.iloc[-1] - 1) * 100
-        ma_slope = (ma200_series.iloc[-1] - ma200_series.iloc[-20]) if len(ma200_series.dropna()) > 20 else 0
 
-        # DIP QUALITY MODEL (0-100)
+        # Improved slope logic
+        if len(ma200_series.dropna()) > 20:
+            ma_slope = ma200_series.iloc[-1] - ma200_series.iloc[-20]
+        else:
+            ma_slope = 0
+
+        # DIP SCORE (refined)
         dip_score = 0
+
+        # Depth
         if drawdown < -20: dip_score += 30
         elif drawdown < -10: dip_score += 20
         elif drawdown < -5: dip_score += 10
-        
-        if ma_slope > 0: dip_score += 40
-        elif ma_slope > -1: dip_score += 20
-        
-        if cur_p > ma50_val: dip_score += 30
-        elif cur_p > ma200_val: dip_score += 15
 
-        # DECISION SCORE (Base logic from v0)
+        # Trend (less optimistic)
+        if ma_slope > 0:
+            dip_score += 40
+        elif ma_slope > -0.5:
+            dip_score += 15
+
+        # Structure
+        if cur_p > ma50_val:
+            dip_score += 30
+        elif cur_p > ma200_val:
+            dip_score += 15
+
+        # ORIGINAL SCORE
         score = 0
         if fg_val < 35: score += 40
         if rsi_val < 40: score += 30
         if cur_p < ma200_val: score += 30
 
-        # UI LAYOUT
+        # 🔥 FINAL BLENDED SCORE (NEW)
+        final_score = 0.7 * score + 0.3 * dip_score
+
+        # UI
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Current Price", f"{cur_p:,.2f} {currency}")
         c1.markdown(f"🔗 [Yahoo Finance ↗](https://finance.yahoo.com/quote/{ticker})")
@@ -141,39 +156,39 @@ if ticker:
 
         st.divider()
 
-        # DIP INTELLIGENCE PANEL
+        # DIP PANEL
         st.subheader("🧠 Dip Intelligence")
         d1, d2, d3 = st.columns(3)
-        d1.metric("Drawdown from Peak", f"{drawdown:.1f}%")
-        d2.metric("Trend Health (Slope)", f"{ma_slope:.2f}")
-        d3.metric("Dip Quality Score", f"{dip_score}/100")
+        d1.metric("Drawdown", f"{drawdown:.1f}%")
+        d2.metric("Trend Slope", f"{ma_slope:.2f}")
+        d3.metric("Dip Score", f"{dip_score}/100")
 
         with st.expander("📝 Advanced Strategy Breakdown", expanded=True):
             st.write(f"""
-            **1. Drawdown Analysis:** Current drawdown is **{drawdown:.1f}%**.
-            Deeper drawdowns offer stronger recovery potential but higher structural risk.
-            
-            **2. Trend Health (MA200 Slope):**
-            Current slope is **{ma_slope:.2f}**. A positive slope indicates a "Healthy Dip" within an uptrend. 
-            
-            **3. Valuation (P/E Ratio):** Current P/E: **{pe_ratio if pe_ratio else 'N/A'}**. This helps determine if the dip is fundamentally "cheap."
-            
-            **4. Dip Quality Score: {dip_score}/100**
-            - 70+ → Healthy dip (High probability rebound)
-            - 40–70 → Uncertain regime (DCA with caution)
-            - <40 → Weak structure (Possible falling knife)
+            **Dip Score ({dip_score}) → Structure + Trend + Depth**
+            **Base Score ({score}) → Sentiment + RSI**
+
+            **Final Score = 70% Base + 30% Dip Intelligence = {final_score:.1f}**
+
+            **P/E ({pe_ratio if pe_ratio else 'N/A'}) is ONLY long-term context.**
+            It does NOT predict short-term dips.
+
+            👉 This system distinguishes:
+            - Panic inside strength (buy)
+            - Weak trend breakdown (caution)
             """)
 
-        # FINAL DECISION
         st.divider()
-        if score >= 70:
-            st.success(f"🔥 **AGRESSIVE BUY** | Invest `{baseline * 2:,.2f} {currency}` in {ticker}")
-        elif score >= 35:
-            st.info(f"⚖️ **STEADY DCA** | Invest `{baseline:,.2f} {currency}` in {ticker}")
-        else:
-            st.warning(f"⚠️ **REDUCE BUY / SELL** | Invest `{baseline * 0.5:,.2f} {currency}`")
 
-        # CHARTING - Moved slider right above chart
+        # FINAL DECISION (UPDATED)
+        if final_score >= 70:
+            st.success(f"🔥 **AGGRESSIVE BUY** | Invest `{baseline * 2:,.2f} {currency}`")
+        elif final_score >= 40:
+            st.info(f"⚖️ **STEADY DCA** | Invest `{baseline:,.2f} {currency}`")
+        else:
+            st.warning(f"⚠️ **CAUTION / REDUCE** | Invest `{baseline * 0.5:,.2f} {currency}`")
+
+        # CHART
         st.subheader("Price Performance")
         view = st.select_slider("Adjust View Range:", options=["1D", "1W", "YTD", "1Y", "5Y", "MAX"], value="1Y")
         
