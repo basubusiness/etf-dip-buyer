@@ -3,8 +3,8 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-st.set_page_config(page_title="ETF Dip-Terminal v2.9", layout="wide")
-st.title("🏹 ETF Dip-Terminal v2.9")
+st.set_page_config(page_title="ETF Dip-Terminal v3.0", layout="wide")
+st.title("🏹 ETF Dip-Terminal v3.0")
 
 ticker = None
 isin = None
@@ -122,6 +122,23 @@ if ticker:
         vix_val, vix_change = get_vix()
 
         # ----------------------------------
+        # 🔥 NEW: TRIGGER SYSTEM
+        # ----------------------------------
+        price_change = (close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100
+        rsi_prev = float((100 - (100 / (1 + (gain / loss.replace(0, 0.001))))).iloc[-2])
+
+        rsi_rising = rsi_val > rsi_prev
+        trend_weak = ma_slope <= 0
+
+        # State logic
+        if rsi_val < 35 and trend_weak:
+            state = "WAIT"
+        elif price_change > 1.5 and rsi_rising:
+            state = "TRIGGER"
+        else:
+            state = "WATCH"
+
+        # ----------------------------------
         # DECISION
         # ----------------------------------
         st.subheader("🎯 Decision")
@@ -137,12 +154,29 @@ ISIN: {isin if isin else "Not available"}
         if isin:
             st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
 
+        # Base score
         score = 0
         if fg_val < 35: score += 40
         if rsi_val < 40: score += 30
         if cur_p < ma200.iloc[-1]: score += 30
 
-        # Decision + money mapping
+        # ----------------------------------
+        # 🧠 ENTRY TIMING DISPLAY
+        # ----------------------------------
+        st.subheader("⏱ Entry Timing")
+
+        if state == "WAIT":
+            st.warning("🟡 WAIT → Market still falling, avoid early entry")
+        elif state == "WATCH":
+            st.info("🔵 WATCH → Stabilizing, monitor closely")
+        elif state == "TRIGGER":
+            st.success("🟢 TRIGGER → Reversal detected, consider entry")
+
+        st.caption(f"Price change: {price_change:.2f}% | RSI rising: {rsi_rising}")
+
+        # ----------------------------------
+        # FINAL DECISION
+        # ----------------------------------
         if score >= 70:
             st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
         elif score >= 40:
@@ -155,21 +189,17 @@ ISIN: {isin if isin else "Not available"}
         st.divider()
 
         # ----------------------------------
-        # SIGNALS
+        # SIGNALS (unchanged)
         # ----------------------------------
         st.subheader("🧠 Market Signals")
 
         col1, col2 = st.columns(2)
 
-        # F&G
         with col1:
             st.markdown("### 😨 Fear & Greed Index")
             st.write(f"**{fg_val}**")
             st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
-            st.caption("Low → Fear → Better entry | High → Greed → Expensive")
-
-        # VIX
         with col2:
             st.markdown("### 📊 Volatility Index (VIX)")
             st.write(f"**{round(vix_val,1)}**")
@@ -181,43 +211,20 @@ ISIN: {isin if isin else "Not available"}
 
         col3, col4 = st.columns(2)
 
-        # RSI
         with col3:
             st.markdown("### 📉 Relative Strength Index (RSI)")
             st.write(f"**{rsi_val:.1f}**")
 
-            if rsi_val < 35:
-                st.success("Oversold → possible rebound")
-
             with st.expander("🔍 Math"):
                 st.write(f"""
-RSI = 100 - (100 / (1 + RS))
-
-RS = avg(gains) / avg(losses)
-
 RS = {rs.iloc[-1]:.2f}
 RSI = {rsi_val:.2f}
 """)
 
-        # TREND
         with col4:
             st.markdown("### 📈 Long-term Trend (200-day Moving Average)")
-            st.write(f"**{ma_slope:.2f}%**")
+            st.write(f"**{ma_slope:.2f}%")
 
-            if ma_slope > 0:
-                st.success("Uptrend intact → dip likely temporary")
-
-            with st.expander("🔍 Math"):
-                st.write(f"""
-MA today = {ma200.iloc[-1]:.2f}  
-MA 20d ago = {prev:.2f}  
-
-Slope = {ma_slope:.2f}%
-""")
-
-        # ----------------------------------
-        # CHART
-        # ----------------------------------
         st.subheader("📊 Price History (1Y)")
 
         chart_data = pd.DataFrame({
