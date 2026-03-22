@@ -5,8 +5,8 @@ import requests
 
 ticker = None
 
-st.set_page_config(page_title="ETF Dip-Terminal v2.2", layout="wide")
-st.title("🏹 ETF Dip-Terminal v2.2")
+st.set_page_config(page_title="ETF Dip-Terminal v2.3", layout="wide")
+st.title("🏹 ETF Dip-Terminal v2.3")
 
 # ----------------------------------
 # SIDEBAR
@@ -88,7 +88,8 @@ if ticker:
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rsi_val = float((100 - (100 / (1 + (gain / loss.replace(0, 0.001))))).iloc[-1])
+    rs = gain / loss.replace(0, 0.001)
+    rsi_val = float((100 - (100 / (1 + rs))).iloc[-1])
 
     # Drawdown
     peak = close.cummax().iloc[-1]
@@ -108,7 +109,7 @@ if ticker:
     vix_val = get_vix()
 
     # ----------------------------------
-    # INPUT PANEL (COLLAPSED)
+    # INPUT PANEL
     # ----------------------------------
     with st.expander("⚙️ Data Inputs (Optional)", expanded=False):
 
@@ -120,7 +121,7 @@ if ticker:
             st.success("Using manual F&G input")
 
         if fg_val is None:
-            fg_val = 50  # conservative default
+            fg_val = 50
 
         try:
             pe_ratio = yt.info.get("trailingPE") or yt.info.get("forwardPE")
@@ -131,7 +132,7 @@ if ticker:
             st.warning("P/E not available")
 
             if len(user_input) == 12:
-                st.markdown(f"https://www.justetf.com/en/etf-profile.html?isin={user_input}")
+                st.markdown(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={user_input}")
 
             pe_input = st.number_input("Enter P/E (optional)", 0.0, value=0.0)
 
@@ -151,17 +152,34 @@ if ticker:
     final_score = score
 
     # ----------------------------------
+    # ALIGNMENT
+    # ----------------------------------
+    positives = 0
+    if fg_val < 35: positives += 1
+    if rsi_val < 35: positives += 1
+    if ma_slope > 0: positives += 1
+
+    if positives == 3:
+        alignment_text = "All signals aligned → high conviction"
+    elif positives == 2:
+        alignment_text = "Mixed signals → moderate conviction"
+    else:
+        alignment_text = "Weak alignment → low conviction"
+
+    # ----------------------------------
     # DECISION
     # ----------------------------------
     st.subheader("🎯 Decision")
 
     if final_score >= 70:
         st.success("🔥 AGGRESSIVE BUY")
-        st.write(f"Driven by fear ({fg_val:.0f}) + oversold RSI ({rsi_val:.1f})")
     elif final_score >= 40:
         st.info("⚖️ STEADY BUY")
     else:
         st.warning("⚠️ CAUTION")
+
+    st.write(f"Driven by fear ({fg_val:.0f}) + oversold RSI ({rsi_val:.1f})")
+    st.caption(alignment_text)
 
     st.divider()
 
@@ -172,42 +190,78 @@ if ticker:
 
     col1, col2 = st.columns(2)
 
+    # F&G
     with col1:
-        st.markdown("### 😨 Fear & Greed")
+        st.markdown("### 😨 Fear & Greed (Primary)")
         st.write(f"{fg_val:.0f}")
+        st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
         if fg_val < 35:
             st.success("Fear → better entry zone")
-        elif fg_val > 65:
-            st.warning("Greed → expensive market")
 
+        with st.expander("🔍 Math"):
+            st.write(f"Input value: {fg_val}")
+
+    # VIX
     with col2:
-        st.markdown("### 📊 VIX")
+        st.markdown("### 📊 VIX (Supporting)")
         if vix_val:
             st.write(f"{vix_val:.1f}")
+            st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
 
-            if vix_val > 30:
-                st.success("High volatility → fear")
-            elif vix_val < 15:
-                st.warning("Low volatility → complacency")
+            if vix_val > 25:
+                st.success("Elevated volatility → fear in market")
+
+            with st.expander("🔍 Math"):
+                st.write(f"VIX value: {vix_val}")
 
     col3, col4 = st.columns(2)
 
+    # RSI
     with col3:
-        st.markdown("### 📉 RSI")
+        st.markdown("### 📉 RSI (Short-term)")
         st.write(f"{rsi_val:.1f}")
+        st.markdown("🔗 https://www.investopedia.com/terms/r/rsi.asp")
 
         if rsi_val < 35:
             st.success("Oversold → rebound potential")
 
+        with st.expander("🔍 Math"):
+            st.write(f"""
+RSI = 100 - (100 / (1 + RS))
+
+RS = avg(gain) / avg(loss)
+
+Current RS: {rs.iloc[-1]:.2f}
+RSI: {rsi_val:.2f}
+""")
+
+    # Trend
     with col4:
-        st.markdown("### 📈 Trend")
+        st.markdown("### 📈 Trend (Long-term)")
         st.write(f"{ma_slope:.2f}%")
 
         if ma_slope > 0:
-            st.success("Uptrend intact")
-        else:
-            st.warning("Weak trend")
+            st.success("Long-term trend rising → dip likely temporary")
+
+        with st.expander("🔍 Math"):
+            st.write(f"""
+Slope = (MA_today - MA_20d_ago) / MA_20d_ago
+
+MA today: {ma200.iloc[-1]:.2f}
+MA 20d ago: {ma200.iloc[-20]:.2f}
+Slope: {ma_slope:.2f}%
+""")
+
+    # ----------------------------------
+    # CONTEXT
+    # ----------------------------------
+    st.subheader("📎 Context")
+
+    if pe_ratio:
+        st.write(f"P/E Ratio: {pe_ratio:.2f}")
+    else:
+        st.write("P/E not available")
 
     # ----------------------------------
     # CHART
