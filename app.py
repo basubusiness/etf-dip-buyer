@@ -1,151 +1,239 @@
-# (Only showing modified MAIN INTERFACE section for clarity)
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import requests
+
+# ----------------------------------
+# 0. SAFE INIT (prevents NameError)
+# ----------------------------------
 ticker = None
-if ticker:
-    fg_val, fg_label, fg_url = get_market_sentiment()
-    yt = yf.Ticker(ticker)
-    
+
+# ----------------------------------
+# 1. SETUP
+# ----------------------------------
+st.set_page_config(page_title="ETF Dip-Terminal v1.4", layout="wide")
+st.title("🏹 ETF Universal Dip-Terminal v1.4")
+
+# ----------------------------------
+# 2. SIDEBAR (ALWAYS FIRST)
+# ----------------------------------
+with st.sidebar:
+    st.header("Search & Settings")
+
+    user_input = st.text_input("Enter Ticker, Name, or ISIN", value="VOO").strip()
+
+    if user_input:
+        try:
+            search = yf.Search(user_input, max_results=100)
+            if search.quotes:
+                options = {
+                    f"{r['symbol']} | {r.get('longname', 'Unknown')} ({r.get('exchange')})": r['symbol']
+                    for r in search.quotes if 'symbol' in r
+                }
+                selected_label = st.selectbox("Select Asset", options.keys())
+                ticker = options[selected_label]
+            else:
+                ticker = user_input.upper()
+        except:
+            ticker = user_input.upper()
+    else:
+        st.info("👋 Enter a ticker to begin.")
+
+    baseline = st.number_input("Monthly Base Investment", value=1000)
+
+# ----------------------------------
+# 3. SENTIMENT ENGINE
+# ----------------------------------
+@st.cache_data(ttl=300)
+def get_market_sentiment():
     try:
-        f_info = yt.fast_info
-        currency = f_info.get('currency', 'USD')
-        pe_ratio = yt.info.get('trailingPE') or yt.info.get('forwardPE')
+        url = "https://production.dataviz.cnn.io/index/feargreed/graphdata"
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        if res.status_code == 200:
+            val = float(res.json()["fear_and_greed"]["score"])
+            return val, "CNN Fear & Greed", "https://edition.cnn.com/markets/fear-and-greed"
+    except:
+        pass
+
+    try:
+        vix = yf.Ticker("^VIX").fast_info['last_price']
+
+        if vix < 13: fg_val = 80
+        elif vix < 18: fg_val = 65
+        elif vix < 23: fg_val = 50
+        elif vix < 30: fg_val = 35
+        elif vix < 40: fg_val = 20
+        else: fg_val = 10
+
+        return fg_val, f"VIX Sentiment ({vix:.2f})", "https://finance.yahoo.com/quote/^VIX"
+    except:
+        return 50.0, "Neutral", "https://finance.yahoo.com"
+
+# ----------------------------------
+# 4. DATA ENGINE
+# ----------------------------------
+def get_data(symbol):
+    df = yf.download(symbol, period="1y", interval="1d", progress=False)
+
+    if df.empty:
+        return None
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    return df
+
+# ----------------------------------
+# 5. MAIN APP
+# ----------------------------------
+if ticker:
+
+    df = get_data(ticker)
+
+    if df is None:
+        st.error("No data found. Try another ticker.")
+        st.stop()
+
+    # --- Basic info
+    yt = yf.Ticker(ticker)
+    try:
+        currency = yt.fast_info.get("currency", "USD")
+        pe_ratio = yt.info.get("trailingPE") or yt.info.get("forwardPE")
     except:
         currency = "USD"
         pe_ratio = None
 
-    calc_df = yf.download(ticker, period="1y", interval="1d", progress=False)
+    # --- Price data
+    close = df["Close"]
+    cur_p = float(close.iloc[-1])
 
-    if not calc_df.empty:
-        if isinstance(calc_df.columns, pd.MultiIndex): 
-            calc_df.columns = calc_df.columns.get_level_values(0)
-        
-        close_calc = calc_df['Close']
-        cur_p = float(close_calc.iloc[-1])
+    ma200 = close.rolling(200).mean()
+    ma50 = close.rolling(50).mean()
 
-        ma200_series = close_calc.rolling(window=200).mean()
-        ma200_val = ma200_series.iloc[-1]
-        ma50_val = close_calc.rolling(window=50).mean().iloc[-1]
+    ma200_val = ma200.iloc[-1]
+    ma50_val = ma50.iloc[-1]
 
-        delta = close_calc.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rsi_val = float((100 - (100 / (1 + (gain / loss.replace(0, 0.001))))).iloc[-1])
+    # --- RSI
+    delta = close.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rsi_val = float((100 - (100 / (1 + (gain / loss.replace(0, 0.001))))).iloc[-1])
 
-        rolling_max = close_calc.cummax()
-        drawdown = (cur_p / rolling_max.iloc[-1] - 1) * 100
+    # --- Drawdown
+    rolling_max = close.cummax()
+    drawdown = (cur_p / rolling_max.iloc[-1] - 1) * 100
 
-        if len(ma200_series.dropna()) > 20:
-            prev = ma200_series.iloc[-20]
-            ma_slope = ((ma200_series.iloc[-1] - prev) / prev) * 100
-        else:
-            ma_slope = 0
+    # --- Slope (%)
+    if len(ma200.dropna()) > 20:
+        prev = ma200.iloc[-20]
+        ma_slope = ((ma200.iloc[-1] - prev) / prev) * 100
+    else:
+        ma_slope = 0
 
-        # -------------------------
-        # SCORING (unchanged logic)
-        # -------------------------
-        dip_score = 0
-        if drawdown < -20: dip_score += 30
-        elif drawdown < -10: dip_score += 20
-        elif drawdown < -5: dip_score += 10
-        if drawdown < -15: dip_score += 10
+    # --- Sentiment
+    fg_val, fg_label, fg_url = get_market_sentiment()
 
-        if ma_slope > 0: dip_score += 40
-        elif ma_slope > -0.5: dip_score += 15
+    # ----------------------------------
+    # SCORING
+    # ----------------------------------
+    dip_score = 0
 
-        if cur_p > ma50_val: dip_score += 30
-        elif cur_p > ma200_val: dip_score += 15
+    if drawdown < -20: dip_score += 30
+    elif drawdown < -10: dip_score += 20
+    elif drawdown < -5: dip_score += 10
 
-        score = 0
-        if fg_val < 35: score += 40
-        if rsi_val < 40: score += 30
-        if cur_p < ma200_val: score += 30
+    if drawdown < -15: dip_score += 10
 
-        final_score = 0.65 * score + 0.35 * dip_score
+    if ma_slope > 0: dip_score += 40
+    elif ma_slope > -0.5: dip_score += 15
 
-        st.divider()
+    if cur_p > ma50_val: dip_score += 30
+    elif cur_p > ma200_val: dip_score += 15
 
-        # =========================================
-        # (1) SHOULD WE BUY?
-        # =========================================
-        st.subheader("🎯 Should You Buy?")
+    score = 0
+    if fg_val < 35: score += 40
+    if rsi_val < 40: score += 30
+    if cur_p < ma200_val: score += 30
 
-        if final_score >= 70:
-            decision = "AGGRESSIVE BUY"
-            st.success(f"🔥 {decision} | Invest `{baseline * 2:,.2f} {currency}`")
-        elif final_score >= 40:
-            decision = "STEADY BUY"
-            st.info(f"⚖️ {decision} | Invest `{baseline:,.2f} {currency}`")
-        else:
-            decision = "CAUTION"
-            st.warning(f"⚠️ {decision} | Invest `{baseline * 0.5:,.2f} {currency}`")
+    final_score = 0.65 * score + 0.35 * dip_score
 
-        # =========================================
-        # (2) WHY (simple language)
-        # =========================================
-        st.subheader("🧠 Why this recommendation")
+    st.divider()
 
-        explanation = []
+    # =========================================
+    # (1) SHOULD YOU BUY
+    # =========================================
+    st.subheader("🎯 Should You Buy?")
 
-        if fg_val < 35:
-            explanation.append("Market is currently fearful (better buying conditions)")
-        if rsi_val < 35:
-            explanation.append("Asset has recently dropped sharply (may rebound)")
-        if drawdown < -10:
-            explanation.append("Price is significantly below recent highs")
-        if ma_slope > 0:
-            explanation.append("Long-term trend is still positive (healthy market)")
-        elif ma_slope < 0:
-            explanation.append("Trend is weakening (higher risk)")
+    if final_score >= 70:
+        st.success(f"🔥 AGGRESSIVE BUY | Invest `{baseline * 2:,.2f} {currency}`")
+    elif final_score >= 40:
+        st.info(f"⚖️ STEADY BUY | Invest `{baseline:,.2f} {currency}`")
+    else:
+        st.warning(f"⚠️ CAUTION | Invest `{baseline * 0.5:,.2f} {currency}`")
 
-        if not explanation:
-            explanation.append("Market conditions are neutral")
+    # =========================================
+    # (2) WHY (SIMPLE)
+    # =========================================
+    st.subheader("🧠 Why this recommendation")
 
-        for e in explanation:
-            st.write(f"• {e}")
+    reasons = []
 
-        # =========================================
-        # (3) DETAILS (your existing metrics)
-        # =========================================
-        st.subheader("📊 Check the Details")
+    if fg_val < 35:
+        reasons.append("Market is fearful → better buying conditions")
+    if rsi_val < 35:
+        reasons.append("Price dropped recently → possible rebound")
+    if drawdown < -10:
+        reasons.append("Significant dip from recent highs")
+    if ma_slope > 0:
+        reasons.append("Long-term trend is still healthy")
+    elif ma_slope < 0:
+        reasons.append("Trend is weakening → higher risk")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Price", f"{cur_p:,.2f} {currency}")
-        c2.metric("Sentiment", f"{fg_val:.0f}/100")
-        c3.metric("RSI", f"{rsi_val:.1f}")
+    if not reasons:
+        reasons.append("Market conditions are neutral")
 
-        d1, d2, d3 = st.columns(3)
-        d1.metric("Drawdown", f"{drawdown:.1f}%")
-        d2.metric("Trend (Slope)", f"{ma_slope:.2f}%")
-        d3.metric("Dip Score", f"{dip_score}/100")
+    for r in reasons:
+        st.write(f"• {r}")
 
-        # =========================================
-        # (4) OTHER CONSIDERATIONS
-        # =========================================
-        st.subheader("📎 Other Considerations")
+    # =========================================
+    # (3) DETAILS
+    # =========================================
+    st.subheader("📊 Check Details")
 
-        if pe_ratio:
-            st.write(f"**P/E Ratio:** {pe_ratio:.2f}")
-        else:
-            st.write("**P/E Ratio:** Not available for this ETF")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Price", f"{cur_p:,.2f} {currency}")
+    c2.metric("Sentiment", f"{fg_val:.0f}")
+    c3.metric("RSI", f"{rsi_val:.1f}")
 
-            if len(user_input) == 12:
-                justetf_link = f"https://www.justetf.com/en/etf-profile.html?isin={user_input}"
-                st.markdown(f"🔗 [View ETF Fundamentals ↗]({justetf_link})")
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Drawdown", f"{drawdown:.1f}%")
+    d2.metric("Trend", f"{ma_slope:.2f}%")
+    d3.metric("Dip Score", f"{dip_score}/100")
 
-        st.write("""
-        • Valuation is a long-term indicator  
-        • It does NOT predict short-term dips  
-        • Use it as background context only
-        """)
+    # =========================================
+    # (4) OTHER CONSIDERATIONS
+    # =========================================
+    st.subheader("📎 Other Considerations")
 
-        st.divider()
+    if pe_ratio:
+        st.write(f"**P/E Ratio:** {pe_ratio:.2f}")
+    else:
+        st.write("**P/E Ratio:** Not available for this ETF")
 
-        # CHART (unchanged)
-        st.subheader("Price Performance")
-        view = st.select_slider("Adjust View Range:", options=["1D", "1W", "YTD", "1Y", "5Y", "MAX"], value="1Y")
-        
-        chart_df = get_period_data(ticker, view)
-        if not chart_df.empty:
-            chart_data = pd.DataFrame({"Price": chart_df['Close']})
-            if view in ["YTD", "1Y", "5Y", "MAX"]:
-                chart_data["200-Day Trend"] = chart_df['Close'].rolling(window=200).mean()
-            st.line_chart(chart_data, use_container_width=True)
+        if len(user_input) == 12:
+            link = f"https://www.justetf.com/en/etf-profile.html?isin={user_input}"
+            st.markdown(f"🔗 [View ETF Fundamentals ↗]({link})")
+
+    st.write("""
+    • Valuation is long-term context  
+    • Not useful for short-term dip timing  
+    """)
+
+    # ----------------------------------
+    # CHART
+    # ----------------------------------
+    st.subheader("Price Performance")
+    st.line_chart(close)
+
+else:
+    st.info("Enter a ticker to begin.")
