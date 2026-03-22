@@ -8,40 +8,45 @@ import re
 st.set_page_config(page_title="ETF Dip-Terminal", layout="wide")
 st.title("🏹 ETF Universal Dip-Terminal")
 
-# 2. SIDEBAR - SMART SEARCH (Name, Ticker, or ISIN)
+# 2. SIDEBAR - SMART SEARCH
 with st.sidebar:
-    st.header("Smart Search")
+    st.header("Search & Settings")
+    # Ticker, Name, or ISIN input
     user_input = st.text_input("Enter Name, Ticker, or ISIN", value="VOO").strip()
     
-    # ISIN Detection (12-character alphanumeric starting with 2 letters)
-    is_isin = bool(re.match(r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$/i", user_input))
+    ticker = None
     
-    # SEARCH ENGINE
-    # We use yf.Search to find the best-matched Ticker for the input
-    search = yf.Search(user_input, max_results=5)
-    search_results = search.quotes
-    
-    if search_results:
-        # Create a dropdown to handle multiple matches (Common with Morningstar/Yahoo mismatches)
-        options = {f"{r['symbol']} | {r.get('longname', 'Unknown')} ({r.get('exchange')})": r['symbol'] for r in search_results}
-        selected_label = st.selectbox("Select the exact asset:", options.keys())
-        ticker = options[selected_label]
+    # GUARD CLAUSE: Only run if user_input is NOT blank
+    if user_input:
+        search = yf.Search(user_input, max_results=5)
+        search_results = search.quotes
+        
+        if search_results:
+            # Create a dropdown for YF matches
+            options = {f"{r['symbol']} | {r.get('longname', 'Unknown')} ({r.get('exchange')})": r['symbol'] for r in search_results}
+            selected_label = st.selectbox("Select the exact asset:", options.keys())
+            ticker = options[selected_label]
+        else:
+            st.warning("No matches found. Using raw input.")
+            ticker = user_input.upper()
     else:
-        st.warning("No direct match. Using raw input as Ticker.")
-        ticker = user_input.upper()
+        st.info("Enter a search term to begin.")
 
     baseline = st.number_input("Monthly Base Investment ($)", value=1000)
+    
     st.divider()
     
-    # 3. VERIFICATION LINKS
-    st.write("🔍 **Verification Links**")
-    # Morningstar: If we have a ticker, search by that ticker on their site
-    st.link_button(f"Morningstar: {ticker}", f"https://www.morningstar.com/search?query={ticker}")
-    st.link_button(f"Yahoo Finance: {ticker}", f"https://finance.yahoo.com/quote/{ticker}")
+    # 3. VERIFICATION LINKS (YF ONLY)
+    if ticker:
+        st.write("🔍 **Verify on Yahoo Finance**")
+        st.link_button(f"Open {ticker} on YF", f"https://finance.yahoo.com/quote/{ticker}")
 
 # 4. DATA ENGINE
 @st.cache_data(ttl=600)
 def fetch_market_data(symbol):
+    if not symbol:
+        return pd.DataFrame(), 50.0, "No Symbol"
+        
     df = yf.download(symbol, period="1y", progress=False)
     
     # Fear & Greed Scraper
@@ -51,52 +56,57 @@ def fetch_market_data(symbol):
         data = requests.get(url, headers=headers, timeout=5).json()
         fg_val, fg_text = float(data['now']['value']), data['now']['rating']
     except:
-        fg_val, fg_text = 50.0, "Neutral (Sync Unavailable)"
+        fg_val, fg_text = 50.0, "Neutral (Sync Issue)"
     
     return df, fg_val, fg_text
 
-df, fg_val, fg_text = fetch_market_data(ticker)
+# 5. EXECUTION & ANALYSIS
+if ticker:
+    df, fg_val, fg_text = fetch_market_data(ticker)
 
-# 5. DATA PROCESSING & ANALYSIS
-if not df.empty and len(df) > 20:
-    # Flattening headers for 2026 format
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    if not df.empty and len(df) > 20:
+        # Flattening 2026 Multi-Index headers
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-    close = df['Close']
-    ma200 = close.rolling(window=200).mean()
-    
-    # RSI Logic
-    delta = close.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rsi_val = float((100 - (100 / (1 + (gain/loss)))).iloc[-1])
+        close = df['Close']
+        ma200 = close.rolling(window=200).mean()
+        
+        # RSI Calculation
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        # Avoid division by zero
+        rs = gain / loss.replace(0, 0.001)
+        rsi_val = float((100 - (100 / (1 + rs))).iloc[-1])
 
-    cur_p = float(close.iloc[-1])
-    cur_ma = float(ma200.iloc[-1]) if not pd.isna(ma200.iloc[-1]) else cur_p
-    
-    # SCORING (Fear & Greed + RSI + Trend)
-    score = 0
-    if fg_val < 35: score += 40
-    if rsi_val < 35: score += 30
-    if cur_p < cur_ma: score += 30
+        cur_p = float(close.iloc[-1])
+        cur_ma = float(ma200.iloc[-1]) if not pd.isna(ma200.iloc[-1]) else cur_p
+        
+        # SCORING (Fear & Greed 40%, RSI 30%, Trend 30%)
+        score = 0
+        if fg_val < 35: score += 40
+        if rsi_val < 35: score += 30
+        if cur_p < cur_ma: score += 30
 
-    # 6. DASHBOARD
-    st.subheader(f"Dashboard: {ticker}")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Live Price", f"${cur_p:,.2f}")
-    c2.metric("Market Sentiment", f"{fg_val:.0f}", help=fg_text)
-    c3.metric("RSI Score", f"{rsi_val:.1f}")
+        # 6. DASHBOARD UI
+        st.subheader(f"Analysis for: {ticker}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Live Price", f"${cur_p:,.2f}")
+        c2.metric("Fear & Greed", f"{fg_val:.0f}", help=fg_text)
+        c3.metric("RSI Score", f"{rsi_val:.1f}")
 
-    # DECISION LOGIC
-    if score > 70:
-        st.success(f"🔥 **AGRESSIVE BUY** | Deploy `${baseline * 2:,.2f}`")
-    elif score > 35:
-        st.info(f"⚖️ **DCA / STEADY** | Deploy `${baseline:,.2f}`")
+        # INVESTMENT DECISION BOX
+        if score > 70:
+            st.success(f"🔥 **STRATEGY: AGGRESSIVE BUY** | Invest `${baseline * 2:,.2f}`")
+        elif score > 35:
+            st.info(f"⚖️ **STRATEGY: STEADY DCA** | Invest `${baseline:,.2f}`")
+        else:
+            st.warning(f"⚠️ **STRATEGY: CAUTION / HOLD** | Invest `${baseline * 0.5:,.2f}`")
+
+        # Trend Chart
+        st.line_chart(pd.DataFrame({"Price": close, "200-Day Trend": ma200}))
     else:
-        st.warning(f"⚠️ **CAUTION / HOLD** | Deploy `${baseline * 0.5:,.2f}`")
-
-    # Trend Chart
-    st.line_chart(pd.DataFrame({"Price": close, "200MA": ma200}))
+        st.error(f"Insufficient historical data for {ticker} to calculate trends.")
 else:
-    st.error("Select a valid asset from the sidebar to display data.")
+    st.write("### Please select an asset in the sidebar to view the Terminal.")
