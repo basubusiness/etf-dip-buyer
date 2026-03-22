@@ -5,8 +5,8 @@ import requests
 
 ticker = None
 
-st.set_page_config(page_title="ETF Dip-Terminal v2.3", layout="wide")
-st.title("🏹 ETF Dip-Terminal v2.3")
+st.set_page_config(page_title="ETF Dip-Terminal v2.4", layout="wide")
+st.title("🏹 ETF Dip-Terminal v2.4")
 
 # ----------------------------------
 # SIDEBAR
@@ -78,13 +78,14 @@ if ticker:
     close = df["Close"]
     cur_p = float(close.iloc[-1])
 
+    # Moving Averages (MA)
     ma200 = close.rolling(200).mean()
     ma50 = close.rolling(50).mean()
 
     ma200_val = ma200.iloc[-1]
     ma50_val = ma50.iloc[-1]
 
-    # RSI
+    # RSI (Relative Strength Index)
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
@@ -95,7 +96,7 @@ if ticker:
     peak = close.cummax().iloc[-1]
     drawdown = (cur_p / peak - 1) * 100
 
-    # Trend
+    # Trend using MA
     if len(ma200.dropna()) > 20:
         prev = ma200.iloc[-20]
         ma_slope = ((ma200.iloc[-1] - prev) / prev) * 100
@@ -108,25 +109,31 @@ if ticker:
     fg_val, fg_live = get_fear_greed()
     vix_val = get_vix()
 
+    fg_source = "Live" if fg_live else "Default"
+    pe_source = "Live"
+
     # ----------------------------------
     # INPUT PANEL
     # ----------------------------------
     with st.expander("⚙️ Data Inputs (Optional)", expanded=False):
 
         if not fg_live:
-            st.warning("F&G not available")
+            st.warning("Fear & Greed not available")
             st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
-            fg_val = st.number_input("Enter F&G (0–100)", 0, 100, 50)
-            st.success("Using manual F&G input")
+            fg_val = st.number_input("Enter Fear & Greed Index (0–100)", 0, 100, 50)
+            fg_source = "Manual"
+            st.success("Using manual Fear & Greed input")
 
         if fg_val is None:
             fg_val = 50
+            fg_source = "Default"
 
         try:
             pe_ratio = yt.info.get("trailingPE") or yt.info.get("forwardPE")
         except:
             pe_ratio = None
+            pe_source = "Unavailable"
 
         if not pe_ratio:
             st.warning("P/E not available")
@@ -134,11 +141,25 @@ if ticker:
             if len(user_input) == 12:
                 st.markdown(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={user_input}")
 
-            pe_input = st.number_input("Enter P/E (optional)", 0.0, value=0.0)
+            pe_input = st.number_input("Enter P/E Ratio (optional)", 0.0, value=0.0)
 
             if pe_input > 0:
                 pe_ratio = pe_input
+                pe_source = "Manual"
                 st.success("Using manual P/E input")
+            else:
+                pe_source = "Not used"
+
+    # ----------------------------------
+    # DATA STATUS (NEW)
+    # ----------------------------------
+    st.subheader("📊 Data Status")
+
+    st.caption(f"Fear & Greed: {fg_source} ({fg_val:.0f})")
+    st.caption(f"Volatility Index (VIX): {'Live' if vix_val else 'Unavailable'} ({vix_val if vix_val else 'N/A'})")
+    st.caption(f"P/E Ratio: {pe_source}")
+
+    st.divider()
 
     # ----------------------------------
     # SCORING
@@ -178,7 +199,7 @@ if ticker:
     else:
         st.warning("⚠️ CAUTION")
 
-    st.write(f"Driven by fear ({fg_val:.0f}) + oversold RSI ({rsi_val:.1f})")
+    st.write(f"Driven by Fear & Greed ({fg_val:.0f}) + RSI ({rsi_val:.1f})")
     st.caption(alignment_text)
 
     st.divider()
@@ -190,36 +211,34 @@ if ticker:
 
     col1, col2 = st.columns(2)
 
-    # F&G
+    # Fear & Greed
     with col1:
-        st.markdown("### 😨 Fear & Greed (Primary)")
+        st.markdown("### 😨 Fear & Greed Index")
         st.write(f"{fg_val:.0f}")
         st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
         if fg_val < 35:
-            st.success("Fear → better entry zone")
+            st.success("Market fear → better entry zone")
 
-        with st.expander("🔍 Math"):
-            st.write(f"Input value: {fg_val}")
+        with st.expander("🔍 Explanation"):
+            st.write("Composite sentiment indicator (fear vs greed in market)")
 
     # VIX
     with col2:
-        st.markdown("### 📊 VIX (Supporting)")
+        st.markdown("### 📊 Volatility Index (VIX)")
         if vix_val:
             st.write(f"{vix_val:.1f}")
             st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
+            st.write("Measures expected market volatility (fear gauge)")
 
             if vix_val > 25:
                 st.success("Elevated volatility → fear in market")
-
-            with st.expander("🔍 Math"):
-                st.write(f"VIX value: {vix_val}")
 
     col3, col4 = st.columns(2)
 
     # RSI
     with col3:
-        st.markdown("### 📉 RSI (Short-term)")
+        st.markdown("### 📉 Relative Strength Index (RSI)")
         st.write(f"{rsi_val:.1f}")
         st.markdown("🔗 https://www.investopedia.com/terms/r/rsi.asp")
 
@@ -230,7 +249,7 @@ if ticker:
             st.write(f"""
 RSI = 100 - (100 / (1 + RS))
 
-RS = avg(gain) / avg(loss)
+RS (Relative Strength) = avg(gains) / avg(losses)
 
 Current RS: {rs.iloc[-1]:.2f}
 RSI: {rsi_val:.2f}
@@ -238,7 +257,7 @@ RSI: {rsi_val:.2f}
 
     # Trend
     with col4:
-        st.markdown("### 📈 Trend (Long-term)")
+        st.markdown("### 📈 Long-term Trend (200-day Moving Average)")
         st.write(f"{ma_slope:.2f}%")
 
         if ma_slope > 0:
@@ -246,6 +265,8 @@ RSI: {rsi_val:.2f}
 
         with st.expander("🔍 Math"):
             st.write(f"""
+Moving Average (MA) = average price over time
+
 Slope = (MA_today - MA_20d_ago) / MA_20d_ago
 
 MA today: {ma200.iloc[-1]:.2f}
@@ -261,7 +282,7 @@ Slope: {ma_slope:.2f}%
     if pe_ratio:
         st.write(f"P/E Ratio: {pe_ratio:.2f}")
     else:
-        st.write("P/E not available")
+        st.write("P/E not available or not used")
 
     # ----------------------------------
     # CHART
