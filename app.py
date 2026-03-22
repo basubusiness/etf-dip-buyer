@@ -5,8 +5,8 @@ import requests
 from datetime import datetime
 
 # 1. SETUP & THEME
-st.set_page_config(page_title="ETF Dip-Terminal v1.1", layout="wide")
-st.title("🏹 ETF Universal Dip-Terminal v1.1")
+st.set_page_config(page_title="ETF Dip-Terminal v1.2", layout="wide")
+st.title("🏹 ETF Universal Dip-Terminal v1.2")
 
 # 2. SIDEBAR
 with st.sidebar:
@@ -38,11 +38,11 @@ with st.sidebar:
         st.write("""
         **Standard DCA:** Investing the same amount every month regardless of price.
         
-        **Value-Adjusted Buying:** This app suggests you 'Reduce' your buy when prices are high (Greed). 
-        By investing less when expensive and more when cheap, you lower your **Average Cost** faster than standard DCA.
+        **Value-Adjusted Buying:** Invest less when markets are expensive and more when they are fearful.
+        This helps reduce your average buying cost over time.
         """)
 
-# 3. SENTIMENT ENGINE
+# 3. SENTIMENT ENGINE (FIXED VIX MAPPING)
 @st.cache_data(ttl=300)
 def get_market_sentiment():
     try:
@@ -52,10 +52,19 @@ def get_market_sentiment():
             val = float(res.json()["fear_and_greed"]["score"])
             return val, "CNN Fear & Greed", "https://edition.cnn.com/markets/fear-and-greed"
     except: pass
+
     try:
         vix = yf.Ticker("^VIX").fast_info['last_price']
-        fg_val = max(0, min(100, 100 - (vix * 2.5))) 
-        return fg_val, f"VIX-Derived Sentiment ({vix:.2f})", "https://finance.yahoo.com/quote/^VIX"
+
+        # Non-linear realistic mapping
+        if vix < 13: fg_val = 80
+        elif vix < 18: fg_val = 65
+        elif vix < 23: fg_val = 50
+        elif vix < 30: fg_val = 35
+        elif vix < 40: fg_val = 20
+        else: fg_val = 10
+
+        return fg_val, f"VIX Sentiment ({vix:.2f})", "https://finance.yahoo.com/quote/^VIX"
     except:
         return 50.0, "Neutral (Manual)", "https://finance.yahoo.com"
 
@@ -73,7 +82,6 @@ if ticker:
     fg_val, fg_label, fg_url = get_market_sentiment()
     yt = yf.Ticker(ticker)
     
-    # Currency & PE (context only)
     try:
         f_info = yt.fast_info
         currency = f_info.get('currency', 'USD')
@@ -90,7 +98,6 @@ if ticker:
         close_calc = calc_df['Close']
         cur_p = float(close_calc.iloc[-1])
 
-        # Technicals
         ma200_series = close_calc.rolling(window=200).mean()
         ma200_val = ma200_series.iloc[-1]
         ma50_val = close_calc.rolling(window=50).mean().iloc[-1]
@@ -105,27 +112,32 @@ if ticker:
         rolling_max = close_calc.cummax()
         drawdown = (cur_p / rolling_max.iloc[-1] - 1) * 100
 
-        # Improved slope logic
+        # Normalized slope (%)
         if len(ma200_series.dropna()) > 20:
-            ma_slope = ma200_series.iloc[-1] - ma200_series.iloc[-20]
+            prev = ma200_series.iloc[-20]
+            ma_slope = ((ma200_series.iloc[-1] - prev) / prev) * 100
         else:
             ma_slope = 0
 
-        # DIP SCORE (refined)
+        # DIP SCORE
         dip_score = 0
 
-        # Depth
-        if drawdown < -20: dip_score += 30
-        elif drawdown < -10: dip_score += 20
-        elif drawdown < -5: dip_score += 10
+        if drawdown < -20:
+            dip_score += 30
+        elif drawdown < -10:
+            dip_score += 20
+        elif drawdown < -5:
+            dip_score += 10
 
-        # Trend (less optimistic)
+        # Deep dip bonus
+        if drawdown < -15:
+            dip_score += 10
+
         if ma_slope > 0:
             dip_score += 40
         elif ma_slope > -0.5:
             dip_score += 15
 
-        # Structure
         if cur_p > ma50_val:
             dip_score += 30
         elif cur_p > ma200_val:
@@ -137,8 +149,8 @@ if ticker:
         if rsi_val < 40: score += 30
         if cur_p < ma200_val: score += 30
 
-        # 🔥 FINAL BLENDED SCORE (NEW)
-        final_score = 0.7 * score + 0.3 * dip_score
+        # FINAL SCORE (rebalanced)
+        final_score = 0.65 * score + 0.35 * dip_score
 
         # UI
         c1, c2, c3, c4 = st.columns(4)
@@ -151,8 +163,16 @@ if ticker:
         c3.metric("RSI (Momentum)", f"{rsi_val:.1f}")
         c3.markdown("🔗 [RSI Theory ↗](https://www.investopedia.com/terms/r/rsi.asp)")
 
-        c4.metric("P/E Ratio", f"{pe_ratio:.2f}" if pe_ratio else "N/A")
-        c4.markdown("🔗 [PE Explained ↗](https://www.investopedia.com/terms/p/price-earningsratio.asp)")
+        # P/E handling + ETF fallback
+        if pe_ratio:
+            c4.metric("P/E Ratio", f"{pe_ratio:.2f}")
+        else:
+            c4.metric("P/E Ratio", "N/A")
+            if len(user_input) == 12:  # ISIN likely
+                justetf_link = f"https://www.justetf.com/en/etf-profile.html?isin={user_input}"
+                c4.markdown(f"🔗 [View ETF Fundamentals ↗]({justetf_link})")
+            else:
+                c4.markdown("🔗 [PE Explained ↗](https://www.investopedia.com/terms/p/price-earningsratio.asp)")
 
         st.divider()
 
@@ -160,27 +180,40 @@ if ticker:
         st.subheader("🧠 Dip Intelligence")
         d1, d2, d3 = st.columns(3)
         d1.metric("Drawdown", f"{drawdown:.1f}%")
-        d2.metric("Trend Slope", f"{ma_slope:.2f}")
+        d2.metric("Trend Slope (%)", f"{ma_slope:.2f}")
         d3.metric("Dip Score", f"{dip_score}/100")
 
-        with st.expander("📝 Advanced Strategy Breakdown", expanded=True):
+        # ✅ SIMPLIFIED EXPLANATION
+        with st.expander("📝 How to Read This (Simple)", expanded=True):
             st.write(f"""
-            **Dip Score ({dip_score}) → Structure + Trend + Depth**
-            **Base Score ({score}) → Sentiment + RSI**
+            Think of this like a **market weather report**:
 
-            **Final Score = 70% Base + 30% Dip Intelligence = {final_score:.1f}**
+            **🌡️ Sentiment ({fg_val:.0f}/100):**  
+            Low = fear (better buying opportunities)  
+            High = greed (more expensive market)
 
-            **P/E ({pe_ratio if pe_ratio else 'N/A'}) is ONLY long-term context.**
-            It does NOT predict short-term dips.
+            **📉 RSI ({rsi_val:.1f}):**  
+            Below 30 = recently fallen → may bounce  
+            Above 70 = recently risen → may cool  
 
-            👉 This system distinguishes:
-            - Panic inside strength (buy)
-            - Weak trend breakdown (caution)
+            **📉 Drawdown ({drawdown:.1f}%):**  
+            Bigger drop = better opportunity (but higher risk)
+
+            **📈 Trend ({ma_slope:.2f}%):**  
+            Positive = healthy market  
+            Negative = weakening market  
+
+            **🎯 Final Score = {final_score:.1f}**
+            Combines short-term signals + long-term strength
+
+            👉 Goal:  
+            Buy dips in strong markets  
+            Avoid dips in weak markets
             """)
 
         st.divider()
 
-        # FINAL DECISION (UPDATED)
+        # FINAL DECISION
         if final_score >= 70:
             st.success(f"🔥 **AGGRESSIVE BUY** | Invest `{baseline * 2:,.2f} {currency}`")
         elif final_score >= 40:
