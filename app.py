@@ -81,6 +81,11 @@ if ticker:
 
         df = get_data(ticker)
         yt = yf.Ticker(ticker)
+        # Fetch ISIN if available
+        try:
+            isin = yt.info.get("isin")
+        except:
+            isin = None
 
         close = df["Close"]
         cur_p = float(close.iloc[-1])
@@ -105,6 +110,16 @@ if ticker:
         # DECISION
         # ----------------------------------
         st.subheader("🎯 Decision")
+
+        # Asset info line (Ticker + ISIN + Yahoo link)
+        yf_link = f"https://finance.yahoo.com/quote/{ticker}"
+        
+        if isin:
+            st.caption(f"{ticker} | ISIN: {isin} | 🔗 {yf_link}")
+        else:
+            st.caption(f"{ticker} | ISIN: Not available | 🔗 {yf_link}")
+
+    
 
         score = 0
         if fg_val < 35: score += 40
