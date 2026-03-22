@@ -3,10 +3,17 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-st.set_page_config(page_title="ETF Dip-Terminal v2.7", layout="wide")
-st.title("🏹 ETF Dip-Terminal v2.7")
+st.set_page_config(page_title="ETF Dip-Terminal v2.8", layout="wide")
+st.title("🏹 ETF Dip-Terminal v2.8")
 
 ticker = None
+isin = None  # <-- important
+
+# ----------------------------------
+# HELPERS
+# ----------------------------------
+def is_isin(x):
+    return len(x) == 12 and x[:2].isalpha()
 
 # ----------------------------------
 # SIDEBAR
@@ -18,7 +25,12 @@ with st.sidebar:
 
     if user_input:
         try:
+            # detect ISIN early
+            if is_isin(user_input):
+                isin = user_input.upper()
+
             search = yf.Search(user_input, max_results=50)
+
             if search.quotes:
                 options = {
                     f"{r['symbol']} | {r.get('longname','')}": {
@@ -27,12 +39,18 @@ with st.sidebar:
                     }
                     for r in search.quotes if 'symbol' in r
                 }
+
                 selected = st.selectbox("Select Asset", options.keys())
-                ticker = options[selected]
+                selected_data = options[selected]
+
                 ticker = selected_data["symbol"]
-                isin = selected_data.get("isin")
+
+                # preserve best ISIN source
+                isin = isin or selected_data.get("isin")
+
             else:
                 ticker = user_input.upper()
+
         except:
             ticker = user_input.upper()
 
@@ -73,6 +91,9 @@ if ticker:
 
     fg_val, fg_status = get_fear_greed()
 
+    # ----------------------------------
+    # FORCE INPUT IF API FAILS
+    # ----------------------------------
     if fg_status != "Live":
         st.warning("⚠️ Fear & Greed unavailable — please input manually")
         st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
@@ -86,11 +107,6 @@ if ticker:
 
         df = get_data(ticker)
         yt = yf.Ticker(ticker)
-        # Fetch ISIN if available
-        try:
-            isin = yt.info.get("isin")
-        except:
-            isin = None
 
         close = df["Close"]
         cur_p = float(close.iloc[-1])
@@ -116,15 +132,17 @@ if ticker:
         # ----------------------------------
         st.subheader("🎯 Decision")
 
-        # Asset info line (Ticker + ISIN + Yahoo link)
         yf_link = f"https://finance.yahoo.com/quote/{ticker}"
-        
-        if isin:
-            st.caption(f"{ticker} | ISIN: {isin} | 🔗 {yf_link}")
-        else:
-            st.caption(f"{ticker} | ISIN: Not available | 🔗 {yf_link}")
 
-    
+        st.caption(f"""
+Ticker: {ticker}  
+ISIN: {isin if isin else "Not available"}  
+🔗 Yahoo Finance: {yf_link}
+""")
+
+        # add justETF if ISIN exists
+        if isin:
+            st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
 
         score = 0
         if fg_val < 35: score += 40
@@ -149,82 +167,35 @@ if ticker:
 
         col1, col2 = st.columns(2)
 
-        # ----------------------------------
         # F&G
-        # ----------------------------------
         with col1:
             st.markdown("### 😨 Fear & Greed Index")
             st.write(f"**{fg_val}**")
             st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
-            with st.expander("🔍 Explanation & Math"):
-                st.write("""
-Composite sentiment indicator (0–100)
-
-Low = Fear → better buying opportunities  
-High = Greed → market expensive
-""")
-
-        # ----------------------------------
         # VIX
-        # ----------------------------------
         with col2:
             st.markdown("### 📊 Volatility Index (VIX)")
-            st.write(f"**{round(vix_val,1)}**")
-            st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
+            if vix_val:
+                st.write(f"**{round(vix_val,1)}**")
+                st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
 
-            if vix_change > 0:
-                st.warning(f"Rising volatility (+{vix_change:.1f}) → increasing fear")
-            else:
-                st.success(f"Falling volatility ({vix_change:.1f}) → calming market")
-
-            with st.expander("🔍 Explanation"):
-                st.write("""
-VIX measures expected market volatility.
-
-Higher VIX → more fear  
-Lower VIX → calm markets
-""")
+                if vix_change > 0:
+                    st.warning(f"Rising volatility (+{vix_change:.1f}) → increasing fear")
+                else:
+                    st.success(f"Falling volatility ({vix_change:.1f}) → calming market")
 
         col3, col4 = st.columns(2)
 
-        # ----------------------------------
         # RSI
-        # ----------------------------------
         with col3:
             st.markdown("### 📉 Relative Strength Index (RSI)")
             st.write(f"**{rsi_val:.1f}**")
-            st.markdown("🔗 https://www.investopedia.com/terms/r/rsi.asp")
 
-            with st.expander("🔍 Math"):
-                st.write(f"""
-Formula:
-RSI = 100 - (100 / (1 + RS))
-
-RS (Relative Strength) = avg(gains) / avg(losses)
-
-RS = {rs.iloc[-1]:.2f}
-RSI = {rsi_val:.2f}
-""")
-
-        # ----------------------------------
-        # TREND
-        # ----------------------------------
+        # Trend
         with col4:
             st.markdown("### 📈 Long-term Trend (200-day Moving Average)")
             st.write(f"**{ma_slope:.2f}%**")
-
-            with st.expander("🔍 Math"):
-                st.write(f"""
-Moving Average (MA) = average price over 200 days
-
-Slope = (MA_today - MA_20d_ago) / MA_20d_ago
-
-MA today = {ma200.iloc[-1]:.2f}
-MA 20d ago = {prev:.2f}
-
-Slope = {ma_slope:.2f}%
-""")
 
         # ----------------------------------
         # CHART
