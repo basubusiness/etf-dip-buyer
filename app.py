@@ -11,53 +11,49 @@ ticker = None
 # ----------------------------------
 # SETUP
 # ----------------------------------
-st.set_page_config(page_title="ETF Dip-Terminal v1.5", layout="wide")
-st.title("🏹 ETF Universal Dip-Terminal v1.5")
+st.set_page_config(page_title="ETF Dip-Terminal v2.0", layout="wide")
+st.title("🏹 ETF Dip-Terminal v2.0")
 
 # ----------------------------------
 # SIDEBAR
 # ----------------------------------
 with st.sidebar:
-    st.header("Search & Settings")
+    st.header("Search")
 
-    user_input = st.text_input("Enter Ticker, Name, or ISIN", value="VOO").strip()
+    user_input = st.text_input("Enter Ticker / ISIN", value="VOO").strip()
 
     if user_input:
         try:
-            search = yf.Search(user_input, max_results=100)
+            search = yf.Search(user_input, max_results=50)
             if search.quotes:
                 options = {
-                    f"{r['symbol']} | {r.get('longname', 'Unknown')} ({r.get('exchange')})": r['symbol']
+                    f"{r['symbol']} | {r.get('longname','')}": r['symbol']
                     for r in search.quotes if 'symbol' in r
                 }
-                selected_label = st.selectbox("Select Asset", options.keys())
-                ticker = options[selected_label]
+                selected = st.selectbox("Select Asset", options.keys())
+                ticker = options[selected]
             else:
                 ticker = user_input.upper()
         except:
             ticker = user_input.upper()
-    else:
-        st.info("👋 Enter a ticker to begin.")
 
-    baseline = st.number_input("Monthly Base Investment", value=1000)
+    baseline = st.number_input("Monthly Investment", value=1000)
 
 # ----------------------------------
 # SENTIMENT ENGINE
 # ----------------------------------
 @st.cache_data(ttl=300)
-def get_market_sentiment():
+def get_sentiment():
     try:
         url = "https://production.dataviz.cnn.io/index/feargreed/graphdata"
         res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
         if res.status_code == 200:
-            val = float(res.json()["fear_and_greed"]["score"])
-            return val
+            return float(res.json()["fear_and_greed"]["score"])
     except:
         pass
 
     try:
-        vix = yf.Ticker("^VIX").fast_info['last_price']
-
+        vix = yf.Ticker("^VIX").fast_info["last_price"]
         if vix < 13: return 80
         elif vix < 18: return 65
         elif vix < 23: return 50
@@ -68,28 +64,24 @@ def get_market_sentiment():
         return 50
 
 # ----------------------------------
-# DATA ENGINE
+# DATA FETCH
 # ----------------------------------
 def get_data(symbol):
     df = yf.download(symbol, period="1y", interval="1d", progress=False)
-
     if df.empty:
         return None
-
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
-
     return df
 
 # ----------------------------------
-# MAIN APP
+# MAIN
 # ----------------------------------
 if ticker:
 
     df = get_data(ticker)
-
     if df is None:
-        st.error("No data found. Try another ticker.")
+        st.error("No data found")
         st.stop()
 
     yt = yf.Ticker(ticker)
@@ -118,7 +110,8 @@ if ticker:
 
     # Drawdown
     rolling_max = close.cummax()
-    drawdown = (cur_p / rolling_max.iloc[-1] - 1) * 100
+    peak = rolling_max.iloc[-1]
+    drawdown = (cur_p / peak - 1) * 100
 
     # Trend slope
     if len(ma200.dropna()) > 20:
@@ -128,116 +121,144 @@ if ticker:
         ma_slope = 0
 
     # Sentiment
-    fg_val = get_market_sentiment()
+    fg_val = get_sentiment()
+
+    # 1Y return
+    one_year_return = (cur_p / close.iloc[0] - 1) * 100
 
     # ----------------------------------
     # SCORING
     # ----------------------------------
-    dip_score = 0
-
-    if drawdown < -20: dip_score += 30
-    elif drawdown < -10: dip_score += 20
-    elif drawdown < -5: dip_score += 10
-
-    if drawdown < -15: dip_score += 10
-
-    if ma_slope > 0: dip_score += 40
-    elif ma_slope > -0.5: dip_score += 15
-
-    if cur_p > ma50_val: dip_score += 30
-    elif cur_p > ma200_val: dip_score += 15
-
     score = 0
     if fg_val < 35: score += 40
     if rsi_val < 40: score += 30
     if cur_p < ma200_val: score += 30
 
+    dip_score = 0
+    if drawdown < -10: dip_score += 20
+    if ma_slope > 0: dip_score += 40
+    if cur_p > ma50_val: dip_score += 30
+
     final_score = 0.65 * score + 0.35 * dip_score
+
+    # ----------------------------------
+    # DECISION
+    # ----------------------------------
+    st.subheader("🎯 Decision")
+
+    if final_score >= 70:
+        st.success(f"🔥 AGGRESSIVE BUY → {baseline*2:,.0f} {currency}")
+    elif final_score >= 40:
+        st.info(f"⚖️ STEADY BUY → {baseline:,.0f} {currency}")
+    else:
+        st.warning(f"⚠️ CAUTION → {baseline*0.5:,.0f} {currency}")
 
     st.divider()
 
-    # =========================================
-    # (1) DECISION
-    # =========================================
-    st.subheader("🎯 Should You Buy?")
+    # ----------------------------------
+    # SIGNAL CARDS
+    # ----------------------------------
+    st.subheader("🧠 Market Signals")
 
-    if final_score >= 70:
-        st.success(f"🔥 AGGRESSIVE BUY | Invest `{baseline * 2:,.2f} {currency}`")
-    elif final_score >= 40:
-        st.info(f"⚖️ STEADY BUY | Invest `{baseline:,.2f} {currency}`")
-    else:
-        st.warning(f"⚠️ CAUTION | Invest `{baseline * 0.5:,.2f} {currency}`")
+    col1, col2 = st.columns(2)
 
-    # =========================================
-    # (2) HOMOGENIZED INSIGHT BLOCK
-    # =========================================
-    st.subheader("🧠 What’s going on?")
+    # SENTIMENT
+    with col1:
+        st.markdown("### 😨 Sentiment")
 
-    insight_lines = []
+        if fg_val < 35:
+            st.error(f"Market is fearful ({fg_val:.0f})")
+        else:
+            st.info(f"Market neutral/greedy ({fg_val:.0f})")
 
-    if fg_val < 35:
-        insight_lines.append(f"Market is fearful ({fg_val:.0f})")
-    elif fg_val > 70:
-        insight_lines.append(f"Market is optimistic ({fg_val:.0f})")
+        st.write("Low sentiment = better buying opportunities")
 
-    if rsi_val < 35:
-        insight_lines.append(f"Price has dropped recently (RSI {rsi_val:.1f})")
+        with st.expander("Math & Source"):
+            st.write("""
+Source:
+- CNN Fear & Greed OR VIX fallback
 
-    if drawdown < -10:
-        insight_lines.append(f"Asset is below recent highs ({drawdown:.1f}%)")
+Mapping (VIX → sentiment):
+<13 → 80  
+18 → 65  
+30 → 35  
+40+ → 10
+""")
 
-    if ma_slope > 0:
-        insight_lines.append(f"Long-term trend remains positive ({ma_slope:.2f}%)")
-    elif ma_slope < 0:
-        insight_lines.append(f"Trend is weakening ({ma_slope:.2f}%)")
+    # RSI
+    with col2:
+        st.markdown("### 📉 Momentum")
 
-    st.write("**Summary:**")
+        if rsi_val < 35:
+            st.success(f"Oversold (RSI {rsi_val:.1f})")
+        else:
+            st.info(f"Neutral RSI ({rsi_val:.1f})")
 
-    if final_score >= 70:
-        st.write("This looks like a **healthy dip in a strong market**.")
-    elif final_score >= 40:
-        st.write("This is a **mixed situation — steady investing makes sense**.")
-    else:
-        st.write("This may be a **weak or falling market — caution advised**.")
+        st.write("Low RSI = recent drop → possible rebound")
 
-    for line in insight_lines:
-        st.write(f"• {line}")
+        with st.expander("Math"):
+            st.write(f"""
+RSI = 100 - (100 / (1 + RS))
 
-    # =========================================
-    # (3) RAW METRICS (HIDDEN)
-    # =========================================
-    with st.expander("📊 See detailed metrics"):
-        st.write(f"Price: {cur_p}")
-        st.write(f"Sentiment: {fg_val}")
-        st.write(f"RSI: {rsi_val}")
-        st.write(f"Drawdown: {drawdown}")
-        st.write(f"Trend: {ma_slope}")
-        st.write(f"Dip Score: {dip_score}")
+RS = avg(gains) / avg(losses)
+Window = 14 days
 
-    # =========================================
-    # (4) OTHER CONSIDERATIONS
-    # =========================================
-    st.subheader("📎 Other Considerations")
+Current RSI: {rsi_val:.2f}
+""")
+
+    col3, col4 = st.columns(2)
+
+    # TREND
+    with col3:
+        st.markdown("### 📈 Trend")
+
+        if ma_slope > 0:
+            st.success(f"Uptrend (+{ma_slope:.2f}%)")
+        else:
+            st.warning(f"Weak trend ({ma_slope:.2f}%)")
+
+        st.write("Positive trend = safer dips")
+
+        with st.expander("Math"):
+            st.write(f"""
+Slope = (MA_today - MA_20d_ago) / MA_20d_ago
+
+Current slope: {ma_slope:.2f}%
+""")
+
+    # DRAWDOWN
+    with col4:
+        st.markdown("### 📉 Drawdown")
+
+        st.info(f"{drawdown:.1f}% from peak")
+
+        st.write("Bigger drop = better opportunity (with risk)")
+
+        with st.expander("Math"):
+            st.write(f"""
+Drawdown = (Current / Peak) - 1
+
+Current: {cur_p:.2f}
+Peak: {peak:.2f}
+""")
+
+    # ----------------------------------
+    # CONTEXT
+    # ----------------------------------
+    st.subheader("📎 Context")
+
+    st.write(f"📅 1Y Return: {one_year_return:.1f}%")
 
     if pe_ratio:
-        st.write(f"**P/E Ratio:** {pe_ratio:.2f}")
+        st.write(f"💰 P/E Ratio: {pe_ratio:.2f}")
     else:
-        st.write("**P/E Ratio:** Not available for this ETF")
-
-        if len(user_input) == 12:
-            link = f"https://www.justetf.com/en/etf-profile.html?isin={user_input}"
-            st.markdown(f"🔗 [View ETF Fundamentals ↗]({link})")
-
-    st.write("""
-    • Valuation is long-term context  
-    • Not useful for short-term timing  
-    """)
+        st.write("💰 P/E: Not available")
 
     # ----------------------------------
     # CHART
     # ----------------------------------
-    st.subheader("Price Performance")
+    st.subheader("📊 Price")
     st.line_chart(close)
 
 else:
-    st.info("Enter a ticker to begin.")
+    st.info("Enter a ticker to begin")
