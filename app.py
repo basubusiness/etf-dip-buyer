@@ -21,11 +21,16 @@ with st.sidebar:
             search = yf.Search(user_input, max_results=50)
             if search.quotes:
                 options = {
-                    f"{r['symbol']} | {r.get('longname','')}": r['symbol']
+                    f"{r['symbol']} | {r.get('longname','')}": {
+                        "symbol": r['symbol'],
+                        "isin": r.get('isin')
+                    }
                     for r in search.quotes if 'symbol' in r
                 }
                 selected = st.selectbox("Select Asset", options.keys())
                 ticker = options[selected]
+                ticker = selected_data["symbol"]
+                isin = selected_data.get("isin")
             else:
                 ticker = user_input.upper()
         except:
