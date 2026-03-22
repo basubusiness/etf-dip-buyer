@@ -161,19 +161,87 @@ ISIN: {isin if isin else "Not available"}
         if cur_p < ma200.iloc[-1]: score += 30
 
         # ----------------------------------
-        # 🧠 ENTRY TIMING DISPLAY
+        # 🧠 ENTRY TIMING (ENHANCED)
         # ----------------------------------
         st.subheader("⏱ Entry Timing")
-
+        
+        # Explanation builder
+        reasons = []
+        
+        if price_change < 0:
+            reasons.append(f"Price is still falling ({price_change:.2f}%)")
+        else:
+            reasons.append(f"Price rising ({price_change:.2f}%)")
+        
+        if not rsi_rising:
+            reasons.append("RSI not improving (momentum still weak)")
+        else:
+            reasons.append("RSI rising (momentum improving)")
+        
+        if trend_weak:
+            reasons.append("Long-term trend weak or flat")
+        else:
+            reasons.append("Long-term trend supportive")
+        
+        # STATE DISPLAY
         if state == "WAIT":
             st.warning("🟡 WAIT → Market still falling, avoid early entry")
+        
+            st.write("**Why:**")
+            for r in reasons:
+                st.write(f"- {r}")
+        
         elif state == "WATCH":
             st.info("🔵 WATCH → Stabilizing, monitor closely")
+        
+            st.write("**Why:**")
+            for r in reasons:
+                st.write(f"- {r}")
+        
         elif state == "TRIGGER":
             st.success("🟢 TRIGGER → Reversal detected, consider entry")
-
-        st.caption(f"Price change: {price_change:.2f}% | RSI rising: {rsi_rising}")
-
+        
+            st.write("**Why:**")
+            for r in reasons:
+                st.write(f"- {r}")
+        
+        # ----------------------------------
+        # 🎯 WHAT TO WATCH NEXT (NEW)
+        # ----------------------------------
+        st.markdown("### 🔭 What would trigger a BUY?")
+        
+        st.write("""
+        - Price increases by **~1.5% or more in a day**
+        - RSI starts rising (momentum shift)
+        - Ideally, price holds above recent low
+        
+        👉 This indicates **buyers stepping in**
+        """)
+        
+        # ----------------------------------
+        # 🔍 MATH (TRANSPARENCY)
+        # ----------------------------------
+        with st.expander("🔍 Entry Timing Math"):
+        
+            st.write(f"""
+        **Price Change Calculation**
+        = (Today Close - Yesterday Close) / Yesterday Close  
+        = {price_change:.2f}%
+        
+        **RSI Direction**
+        Previous RSI = {rsi_prev:.2f}  
+        Current RSI = {rsi_val:.2f}  
+        RSI Rising = {rsi_rising}
+        
+        **Trend Check**
+        MA Slope = {ma_slope:.2f}%  
+        Trend Weak = {trend_weak}
+        
+        **Trigger Condition**
+        Price change > 1.5% AND RSI rising
+        
+        → Current State = {state}
+        """)
         # ----------------------------------
         # FINAL DECISION
         # ----------------------------------
