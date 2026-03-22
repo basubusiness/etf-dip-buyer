@@ -3,46 +3,55 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-# 1. SETUP & UI
+# 1. PAGE CONFIG
 st.set_page_config(page_title="ETF Dip-Terminal", layout="wide")
 st.title("🏹 ETF Universal Dip-Terminal")
-st.write(f"Current Market Date: {pd.Timestamp.now().strftime('%B %d, %y')}")
 
-# 2. UNIVERSAL SEARCH & SETTINGS
+# 2. SIDEBAR - UNIVERSAL SEARCH & SETTINGS
 with st.sidebar:
     st.header("Search & Settings")
-    # Universal Input: Type any ticker (VOO, QQQ, AAPL, etc.)
-    ticker = st.text_input("Enter Ticker Symbol", value="VOO").upper().strip()
+    # Ticker Input
+    ticker = st.text_input("Enter Ticker Symbol (e.g., VOO, QQQ, AAPL)", value="VOO").upper().strip()
     baseline = st.number_input("Monthly Base Investment ($)", value=1000)
     
+    # Manual Trigger Button
+    run_button = st.button("Run Analysis / Sync Data")
+    
     st.divider()
-    # 3. DYNAMIC REFERENCE LINKS
-    st.write("🔍 **Verify on Public Sources**")
-    # These links automatically update based on the ticker you typed
+    st.write("🔍 **External Verification Links**")
+    # Dynamic links that change with your input
     st.link_button(f"Morningstar: {ticker}", f"https://www.morningstar.com/etfs/arcx/{ticker}/quote")
     st.link_button(f"Yahoo Finance: {ticker}", f"https://finance.yahoo.com/quote/{ticker}")
     st.link_button(f"Seeking Alpha: {ticker}", f"https://seekingalpha.com/symbol/{ticker}")
 
-# 4. DATA ENGINE
-@st.cache_data(ttl=3600)
+# 3. DATA ENGINE (With Improved Scraper)
+@st.cache_data(ttl=600) # Refresh every 10 mins
 def fetch_market_data(symbol):
-    # Fetching 1 year of data
-    df = yf.download(symbol, period="1y")
+    # Fetch Price Data
+    df = yf.download(symbol, period="1y", progress=False)
     
-    # Live Sentiment Sync (CNN Fear & Greed API)
+    # Improved CNN Fear & Greed Scraper
     try:
-        fg_url = "https://production.dataviz.cnn.io/index/feargreed/static/daily"
-        fg_data = requests.get(fg_url, headers={'User-Agent': 'Mozilla/5.0'}).json()
+        # Using a more robust User-Agent to avoid 'Sync Error'
+        url = "https://production.dataviz.cnn.io/index/feargreed/static/daily"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Origin': 'https://www.cnn.com',
+            'Referer': 'https://www.cnn.com/'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        fg_data = response.json()
         fg_val = float(fg_data['now']['value'])
         fg_text = fg_data['now']['rating']
-    except:
-        fg_val, fg_text = 50.0, "Neutral (Sync Error)"
+    except Exception as e:
+        fg_val, fg_text = 50.0, f"Sync Error: {str(e)[:20]}"
     
     return df, fg_val, fg_text
 
+# Execute Fetch
 df, fg_val, fg_text = fetch_market_data(ticker)
 
-# 5. PROCESSING & LOGIC
+# 4. DATA PROCESSING
 if not df.empty and len(df) > 20:
     # Flatten 2026 Multi-Index headers
     if isinstance(df.columns, pd.MultiIndex):
@@ -50,52 +59,51 @@ if not df.empty and len(df) > 20:
 
     close_series = df['Close']
     
-    # Calculate Indicators as single numbers (Scalars)
+    # Calculate Indicators
     ma200_series = close_series.rolling(window=200).mean()
     current_price = float(close_series.iloc[-1])
-    # Handle cases where ETF is newer than 200 days
     current_ma200 = float(ma200_series.iloc[-1]) if not pd.isna(ma200_series.iloc[-1]) else current_price
     
-    # RSI Calculation
+    # RSI
     delta = close_series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     rs = gain / loss
     rsi_val = float((100 - (100 / (1 + rs))).iloc[-1])
 
-    # 6. THE SCORING ALGORITHM (Weighted)
+    # 5. SCORING LOGIC
     score = 0
-    if fg_val < 30: score += 40      # 40 pts for Market Panic
-    if rsi_val < 35: score += 30     # 30 pts for Oversold
-    if current_price < current_ma200: score += 30 # 30 pts for "Below Trend"
+    if fg_val < 30: score += 40
+    if rsi_val < 35: score += 30
+    if current_price < current_ma200: score += 30
 
-    # 7. MAIN DASHBOARD DISPLAY
+    # 6. DASHBOARD
     c1, c2, c3 = st.columns(3)
     c1.metric(f"{ticker} Price", f"${current_price:,.2f}")
-    c2.metric("Market Sentiment", f"{fg_val:.0f}", help=fg_text)
+    c2.metric("Fear & Greed", f"{fg_val:.0f}", help=f"Rating: {fg_text}")
     c3.metric("RSI (Oversold)", f"{rsi_val:.1f}")
 
     st.divider()
 
-    # 8. INVESTMENT DECISION
+    # 7. DECISION BOX
     if score > 70:
-        st.success(f"🔥 **STRATEGY: AGGRESSIVE BUY**")
-        st.write(f"The market is in **Extreme Fear** and {ticker} is technically oversold.")
+        st.success(f"🔥 **STRATEGY: AGGRESSIVE BUY** | Score: {score}/100")
         multiplier = 2.0
     elif score > 35:
-        st.info(f"⚖️ **STRATEGY: DOLLAR COST AVERAGE**")
-        st.write("Conditions are standard. Stick to your baseline plan.")
+        st.info(f"⚖️ **STRATEGY: DOLLAR COST AVERAGE** | Score: {score}/100")
         multiplier = 1.0
     else:
-        st.warning(f"⚠️ **STRATEGY: MINIMUM EXPOSURE**")
-        st.write("Market shows signs of greed or overextension. Be cautious with new cash.")
+        st.warning(f"⚠️ **STRATEGY: MINIMUM EXPOSURE** | Score: {score}/100")
         multiplier = 0.5
     
-    st.subheader(f"Recommended Action: Invest `${baseline * multiplier:,.2f}` today.")
+    st.subheader(f"Recommended Buy: `${baseline * multiplier:,.2f}`")
     
-    # Visual Chart
-    plot_df = pd.DataFrame({"Price": close_series, "200-Day Trend": ma200_series})
-    st.line_chart(plot_df)
+    # 8. VISUAL CHART
+    chart_data = pd.DataFrame({
+        "Price": close_series, 
+        "200-Day Trend": ma200_series
+    })
+    st.line_chart(chart_data)
 
 else:
-    st.error(f"Could not retrieve data for '{ticker}'. Please ensure the ticker is correct.")
+    st.error(f"No data found for '{ticker}'. Check the symbol and click 'Run Analysis'.")
