@@ -3,11 +3,11 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-st.set_page_config(page_title="ETF Dip-Terminal v2.8", layout="wide")
-st.title("🏹 ETF Dip-Terminal v2.8")
+st.set_page_config(page_title="ETF Dip-Terminal v2.9", layout="wide")
+st.title("🏹 ETF Dip-Terminal v2.9")
 
 ticker = None
-isin = None  # <-- important
+isin = None
 
 # ----------------------------------
 # HELPERS
@@ -25,7 +25,6 @@ with st.sidebar:
 
     if user_input:
         try:
-            # detect ISIN early
             if is_isin(user_input):
                 isin = user_input.upper()
 
@@ -44,8 +43,6 @@ with st.sidebar:
                 selected_data = options[selected]
 
                 ticker = selected_data["symbol"]
-
-                # preserve best ISIN source
                 isin = isin or selected_data.get("isin")
 
             else:
@@ -54,13 +51,13 @@ with st.sidebar:
         except:
             ticker = user_input.upper()
 
-    baseline = st.number_input("Monthly Investment", value=1000)
+    baseline = st.number_input("Monthly Investment (€ / $)", value=1000)
 
 # ----------------------------------
 # FUNCTIONS
 # ----------------------------------
-def get_data(symbol, period="1y"):
-    df = yf.download(symbol, period=period, interval="1d", progress=False)
+def get_data(symbol):
+    df = yf.download(symbol, period="1y", interval="1d", progress=False)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df
@@ -91,9 +88,6 @@ if ticker:
 
     fg_val, fg_status = get_fear_greed()
 
-    # ----------------------------------
-    # FORCE INPUT IF API FAILS
-    # ----------------------------------
     if fg_status != "Live":
         st.warning("⚠️ Fear & Greed unavailable — please input manually")
         st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
@@ -137,10 +131,9 @@ if ticker:
         st.caption(f"""
 Ticker: {ticker}  
 ISIN: {isin if isin else "Not available"}  
-🔗 Yahoo Finance: {yf_link}
+🔗 {yf_link}
 """)
 
-        # add justETF if ISIN exists
         if isin:
             st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
 
@@ -149,14 +142,15 @@ ISIN: {isin if isin else "Not available"}
         if rsi_val < 40: score += 30
         if cur_p < ma200.iloc[-1]: score += 30
 
+        # Decision + money mapping
         if score >= 70:
-            st.success("🔥 AGGRESSIVE BUY")
+            st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
         elif score >= 40:
-            st.info("⚖️ STEADY BUY")
+            st.info(f"⚖️ STEADY BUY → Invest ~ {baseline}")
         else:
-            st.warning("⚠️ CAUTION")
+            st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
 
-        st.caption(f"Driven by Fear & Greed ({fg_val}) + RSI ({rsi_val:.1f})")
+        st.caption(f"Driven by Fear ({fg_val}) + RSI ({rsi_val:.1f}) + Trend")
 
         st.divider()
 
@@ -173,17 +167,17 @@ ISIN: {isin if isin else "Not available"}
             st.write(f"**{fg_val}**")
             st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
+            st.caption("Low → Fear → Better entry | High → Greed → Expensive")
+
         # VIX
         with col2:
             st.markdown("### 📊 Volatility Index (VIX)")
-            if vix_val:
-                st.write(f"**{round(vix_val,1)}**")
-                st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
+            st.write(f"**{round(vix_val,1)}**")
 
-                if vix_change > 0:
-                    st.warning(f"Rising volatility (+{vix_change:.1f}) → increasing fear")
-                else:
-                    st.success(f"Falling volatility ({vix_change:.1f}) → calming market")
+            if vix_change > 0:
+                st.warning(f"Rising (+{vix_change:.1f}) → increasing fear")
+            else:
+                st.success(f"Falling ({vix_change:.1f}) → calming market")
 
         col3, col4 = st.columns(2)
 
@@ -192,10 +186,34 @@ ISIN: {isin if isin else "Not available"}
             st.markdown("### 📉 Relative Strength Index (RSI)")
             st.write(f"**{rsi_val:.1f}**")
 
-        # Trend
+            if rsi_val < 35:
+                st.success("Oversold → possible rebound")
+
+            with st.expander("🔍 Math"):
+                st.write(f"""
+RSI = 100 - (100 / (1 + RS))
+
+RS = avg(gains) / avg(losses)
+
+RS = {rs.iloc[-1]:.2f}
+RSI = {rsi_val:.2f}
+""")
+
+        # TREND
         with col4:
             st.markdown("### 📈 Long-term Trend (200-day Moving Average)")
             st.write(f"**{ma_slope:.2f}%**")
+
+            if ma_slope > 0:
+                st.success("Uptrend intact → dip likely temporary")
+
+            with st.expander("🔍 Math"):
+                st.write(f"""
+MA today = {ma200.iloc[-1]:.2f}  
+MA 20d ago = {prev:.2f}  
+
+Slope = {ma_slope:.2f}%
+""")
 
         # ----------------------------------
         # CHART
