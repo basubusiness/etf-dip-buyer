@@ -48,23 +48,34 @@ with st.sidebar:
 df = yf.download(ticker, period="1y")
 
 if not df.empty:
-    # Logic: 200-Day MA & RSI
-    df['MA200'] = df['Close'].rolling(window=200).mean()
-    current_price = float(df['Close'].iloc[-1])
-    ma200 = float(df['MA200'].iloc[-1])
+    # --- FIX 1: Flatten 2026 Multi-Index Data ---
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    # --- FIX 2: Isolate the 'Close' column clearly ---
+    close_series = df['Close']
     
-    # RSI
-    delta = df['Close'].diff()
+    # --- FIX 3: Calculate indicators as single values (Scalars) ---
+    # MA200 Calculation
+    ma200_series = close_series.rolling(window=200).mean()
+    current_price = float(close_series.iloc[-1])
+    current_ma200 = float(ma200_series.iloc[-1])
+    
+    # RSI Calculation
+    delta = close_series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rsi = 100 - (100 / (1 + (gain/loss))).iloc[-1]
+    rs = gain / loss
+    rsi_val = float((100 - (100 / (1 + rs))).iloc[-1])
 
-    # 5. THE DIP ALGORITHM
-    # Higher Score = Better "Dip"
+    # 5. THE DIP ALGORITHM (Now using safe scalar values)
     score = 0
-    if fg_val < 30: score += 40  # Panic is high
-    if rsi < 35: score += 30     # Oversold
-    if current_price < ma200: score += 30 # Below trend
+    if fg_val < 30: 
+        score += 40  # Weighting for Market Panic
+    if rsi_val < 35: 
+        score += 30  # Weighting for Oversold Momentum
+    if current_price < current_ma200: 
+        score += 30  # Weighting for Price below Trend
     
     # 6. UI
     c1, c2, c3 = st.columns(3)
