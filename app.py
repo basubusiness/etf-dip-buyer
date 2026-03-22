@@ -3,8 +3,8 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-st.set_page_config(page_title="ETF Dip-Terminal v2.6", layout="wide")
-st.title("🏹 ETF Dip-Terminal v2.6")
+st.set_page_config(page_title="ETF Dip-Terminal v2.7", layout="wide")
+st.title("🏹 ETF Dip-Terminal v2.7")
 
 ticker = None
 
@@ -38,8 +38,6 @@ with st.sidebar:
 # ----------------------------------
 def get_data(symbol, period="1y"):
     df = yf.download(symbol, period=period, interval="1d", progress=False)
-    if df.empty:
-        return None
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df
@@ -70,28 +68,18 @@ if ticker:
 
     fg_val, fg_status = get_fear_greed()
 
-    # ----------------------------------
-    # FORCE INPUT IF FAILED
-    # ----------------------------------
     if fg_status != "Live":
         st.warning("⚠️ Fear & Greed unavailable — please input manually")
-        st.markdown("https://edition.cnn.com/markets/fear-and-greed")
+        st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
-        fg_val = st.number_input("Enter Fear & Greed (0–100)", 0, 100, 50)
+        fg_val = st.number_input("Enter Fear & Greed Index (0–100)", 0, 100, 50)
         fg_status = "Manual"
 
-    # ----------------------------------
-    # CALCULATE BUTTON
-    # ----------------------------------
     run = st.button("Run Analysis")
 
     if run:
 
         df = get_data(ticker)
-        if df is None:
-            st.error("No data found")
-            st.stop()
-
         yt = yf.Ticker(ticker)
 
         close = df["Close"]
@@ -113,33 +101,15 @@ if ticker:
         # VIX
         vix_val, vix_change = get_vix()
 
-        # P/E
-        try:
-            pe_ratio = yt.info.get("trailingPE") or yt.info.get("forwardPE")
-            pe_source = "yfinance"
-        except:
-            pe_ratio = None
-            pe_source = "Unavailable"
-
-        # ----------------------------------
-        # DATA STATUS
-        # ----------------------------------
-        st.subheader("📊 Data Status")
-        st.caption(f"Fear & Greed: {fg_status} ({fg_val})")
-        st.caption(f"VIX: {round(vix_val,1) if vix_val else 'N/A'}")
-        st.caption(f"P/E: {pe_source}")
-
-        st.divider()
-
         # ----------------------------------
         # DECISION
         # ----------------------------------
+        st.subheader("🎯 Decision")
+
         score = 0
         if fg_val < 35: score += 40
         if rsi_val < 40: score += 30
         if cur_p < ma200.iloc[-1]: score += 30
-
-        st.subheader("🎯 Decision")
 
         if score >= 70:
             st.success("🔥 AGGRESSIVE BUY")
@@ -148,55 +118,98 @@ if ticker:
         else:
             st.warning("⚠️ CAUTION")
 
-        st.write(f"Driven by F&G ({fg_val}) + RSI ({rsi_val:.1f})")
+        st.caption(f"Driven by Fear & Greed ({fg_val}) + RSI ({rsi_val:.1f})")
 
         st.divider()
 
         # ----------------------------------
         # SIGNALS
         # ----------------------------------
+        st.subheader("🧠 Market Signals")
+
         col1, col2 = st.columns(2)
 
+        # ----------------------------------
+        # F&G
+        # ----------------------------------
         with col1:
-            st.markdown("### 😨 Fear & Greed")
-            st.write(fg_val)
+            st.markdown("### 😨 Fear & Greed Index")
+            st.write(f"**{fg_val}**")
+            st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
+            with st.expander("🔍 Explanation & Math"):
+                st.write("""
+Composite sentiment indicator (0–100)
+
+Low = Fear → better buying opportunities  
+High = Greed → market expensive
+""")
+
+        # ----------------------------------
+        # VIX
+        # ----------------------------------
         with col2:
-            st.markdown("### 📊 VIX")
-            if vix_val:
-                st.write(round(vix_val,1))
-                if vix_change > 0:
-                    st.warning("Rising fear")
-                else:
-                    st.success("Cooling")
+            st.markdown("### 📊 Volatility Index (VIX)")
+            st.write(f"**{round(vix_val,1)}**")
+            st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
+
+            if vix_change > 0:
+                st.warning(f"Rising volatility (+{vix_change:.1f}) → increasing fear")
+            else:
+                st.success(f"Falling volatility ({vix_change:.1f}) → calming market")
+
+            with st.expander("🔍 Explanation"):
+                st.write("""
+VIX measures expected market volatility.
+
+Higher VIX → more fear  
+Lower VIX → calm markets
+""")
 
         col3, col4 = st.columns(2)
 
+        # ----------------------------------
+        # RSI
+        # ----------------------------------
         with col3:
-            st.markdown("### 📉 RSI")
-            st.write(f"{rsi_val:.1f}")
+            st.markdown("### 📉 Relative Strength Index (RSI)")
+            st.write(f"**{rsi_val:.1f}**")
+            st.markdown("🔗 https://www.investopedia.com/terms/r/rsi.asp")
 
-            with st.expander("Math"):
+            with st.expander("🔍 Math"):
                 st.write(f"""
+Formula:
+RSI = 100 - (100 / (1 + RS))
+
+RS (Relative Strength) = avg(gains) / avg(losses)
+
 RS = {rs.iloc[-1]:.2f}
 RSI = {rsi_val:.2f}
 """)
 
+        # ----------------------------------
+        # TREND
+        # ----------------------------------
         with col4:
-            st.markdown("### 📈 Trend (200-day MA)")
-            st.write(f"{ma_slope:.2f}%")
+            st.markdown("### 📈 Long-term Trend (200-day Moving Average)")
+            st.write(f"**{ma_slope:.2f}%**")
 
-            with st.expander("Math"):
+            with st.expander("🔍 Math"):
                 st.write(f"""
+Moving Average (MA) = average price over 200 days
+
+Slope = (MA_today - MA_20d_ago) / MA_20d_ago
+
 MA today = {ma200.iloc[-1]:.2f}
 MA 20d ago = {prev:.2f}
+
 Slope = {ma_slope:.2f}%
 """)
 
         # ----------------------------------
         # CHART
         # ----------------------------------
-        st.subheader("📊 Price History")
+        st.subheader("📊 Price History (1Y)")
 
         chart_data = pd.DataFrame({
             "Price": close,
