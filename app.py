@@ -1,5 +1,5 @@
 # (Only showing modified MAIN INTERFACE section for clarity)
-
+ticker = None
 if ticker:
     fg_val, fg_label, fg_url = get_market_sentiment()
     yt = yf.Ticker(ticker)
