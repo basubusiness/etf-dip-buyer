@@ -30,32 +30,44 @@ with st.sidebar:
 
 # 3. ROBUST FEAR & GREED ENGINE (Critique Fix)
 @st.cache_data(ttl=300)
-def get_fear_greed():
-    """Fetch CNN Fear & Greed Index using the stable graphdata endpoint."""
+def get_fear_greed(debug=False):
     try:
         url = "https://production.dataviz.cnn.io/index/feargreed/graphdata"
+        
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "User-Agent": "Mozilla/5.0",
             "Accept": "application/json",
             "Referer": "https://edition.cnn.com/markets/fear-and-greed"
         }
         
         res = requests.get(url, headers=headers, timeout=10)
+
+        if res.status_code != 200:
+            raise ValueError(f"HTTP {res.status_code}")
+
         data = res.json()
 
-        # Extract latest score
-        fg_val = float(data["fear_and_greed"]["score"])
+        if "fear_and_greed" not in data:
+            raise ValueError("Invalid structure")
 
-        # Nuanced Rating Mapping
+        fg_val = data.get("fear_and_greed", {}).get("score")
+
+        if fg_val is None:
+            raise ValueError("Missing score")
+
+        fg_val = float(fg_val)
+
+        # Rating mapping
         if fg_val <= 25: fg_text = "Extreme Fear"
         elif fg_val <= 45: fg_text = "Fear"
         elif fg_val <= 55: fg_text = "Neutral"
         elif fg_val <= 75: fg_text = "Greed"
         else: fg_text = "Extreme Greed"
 
-        return fg_val, fg_text, data if debug_mode else None
+        return fg_val, fg_text, data if debug else None
+
     except Exception as e:
-        return 50.0, f"Sync Error: {str(e)[:15]}", None
+        return 50.0, f"Fallback ({str(e)[:20]})", None
 
 # 4. LIGHTWEIGHT TICKER ENGINE
 @st.cache_data(ttl=600)
