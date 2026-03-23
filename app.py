@@ -300,7 +300,8 @@ ISIN: {isin if isin else "Not available"}
         else:
             st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
 
-        st.caption("""
+        with st.expander("🔍 Why this recommendation?", expanded=False):
+            st.write("""
         This recommendation is based on a combination of:
         
         - Market sentiment (Fear & Greed)  
