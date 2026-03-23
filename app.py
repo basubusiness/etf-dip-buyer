@@ -3,8 +3,8 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-st.set_page_config(page_title="ETF Dip-Terminal v3.0", layout="wide")
-st.title("🏹 ETF Dip-Terminal v3.0")
+st.set_page_config(page_title="ETF Dip-Terminal v3.1", layout="wide")
+st.title("🏹 ETF Dip-Terminal v3.1")
 
 ticker = None
 isin = None
@@ -91,7 +91,6 @@ if ticker:
     if fg_status != "Live":
         st.warning("⚠️ Fear & Greed unavailable — please input manually")
         st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
-
         fg_val = st.number_input("Enter Fear & Greed Index (0–100)", 0, 100, 50)
         fg_status = "Manual"
 
@@ -122,7 +121,7 @@ if ticker:
         vix_val, vix_change = get_vix()
 
         # ----------------------------------
-        # 🔥 TRIGGER SYSTEM (FIXED)
+        # TRIGGER SYSTEM (FIXED)
         # ----------------------------------
         price_change = (close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100
         rsi_prev = float((100 - (100 / (1 + rs))).iloc[-2])
@@ -130,11 +129,9 @@ if ticker:
         rsi_rising = rsi_val > rsi_prev
         trend_weak = ma_slope <= 0
 
-        # Dynamic volatility threshold
         volatility = close.pct_change().rolling(20).std().iloc[-1] * 100
         trigger_threshold = max(1.0, volatility * 1.5)
 
-        # State logic
         if rsi_val < 35 and trend_weak:
             state = "WAIT"
         elif price_change > trigger_threshold and rsi_rising:
@@ -158,53 +155,52 @@ ISIN: {isin if isin else "Not available"}
         if isin:
             st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
 
-        # Score (FIXED LINE)
         score = 0
         if fg_val < 35: score += 40
         if rsi_val < 40: score += 30
         if cur_p < ma200.iloc[-1]: score += 30
 
         # ----------------------------------
-        # ENTRY TIMING
+        # ENTRY TIMING (FULL EXPLANATION RESTORED)
         # ----------------------------------
         st.subheader("⏱ Entry Timing")
 
         reasons = []
 
-        if price_change < 0:
-            reasons.append(f"Price falling ({price_change:.2f}%)")
-        else:
-            reasons.append(f"Price rising ({price_change:.2f}%)")
-
+        reasons.append(f"Price change: {price_change:.2f}%")
         reasons.append("RSI rising" if rsi_rising else "RSI still weak")
         reasons.append("Trend supportive" if not trend_weak else "Trend weak")
 
         if state == "WAIT":
-            st.warning("🟡 WAIT → Market still falling")
+            st.warning("🟡 WAIT → Falling structure, avoid early entry")
         elif state == "WATCH":
-            st.info("🔵 WATCH → Stabilizing")
+            st.info("🔵 WATCH → Stabilization phase")
         else:
-            st.success("🟢 TRIGGER → Reversal detected")
+            st.success("🟢 TRIGGER → Early reversal signal")
 
         for r in reasons:
             st.write(f"- {r}")
 
         st.markdown("### 🔭 What would trigger a BUY?")
         st.write(f"""
-- Price increases by **~{trigger_threshold:.2f}%**
-- RSI rising
+- Price rises **~{trigger_threshold:.2f}% or more**
+- RSI continues rising
 - Price holds above recent low
+
+👉 This confirms **buyer strength**
 """)
 
-        # ----------------------------------
-        # MATH
-        # ----------------------------------
-        with st.expander("🔍 Entry Timing Math"):
+        with st.expander("🔍 Entry Timing Full Math"):
             st.write(f"""
 Price Change = {price_change:.2f}%  
-RSI prev = {rsi_prev:.2f} → now {rsi_val:.2f}  
-Trend slope = {ma_slope:.2f}%  
-Threshold = {trigger_threshold:.2f}%
+Volatility = {volatility:.2f}% → Threshold = {trigger_threshold:.2f}%  
+
+RSI prev = {rsi_prev:.2f} → RSI now = {rsi_val:.2f}  
+RSI rising = {rsi_rising}
+
+Trend slope = {ma_slope:.2f}% → Weak = {trend_weak}
+
+Final state = {state}
 """)
 
         # ----------------------------------
@@ -217,10 +213,19 @@ Threshold = {trigger_threshold:.2f}%
         else:
             st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
 
+        # Adaptive explanation
+        asset_name = selected if 'selected' in locals() else ticker
+        is_bond = any(x in asset_name.lower() for x in ["bond", "treasury", "inflation", "gov"])
+
+        if is_bond:
+            st.caption(f"Driven by Momentum (RSI {rsi_val:.1f}) + Trend ({ma_slope:.2f}%)")
+        else:
+            st.caption(f"Driven by Sentiment (Fear {fg_val}) + Momentum (RSI {rsi_val:.1f}) + Trend ({ma_slope:.2f}%)")
+
         st.divider()
 
         # ----------------------------------
-        # SIGNALS
+        # SIGNALS (FULL RESTORED)
         # ----------------------------------
         st.subheader("🧠 Market Signals")
 
@@ -229,24 +234,44 @@ Threshold = {trigger_threshold:.2f}%
         with col1:
             st.markdown("### 😨 Fear & Greed Index")
             st.write(f"**{fg_val}**")
+            st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
 
         with col2:
-            st.markdown("### 📊 VIX")
+            st.markdown("### 📊 Volatility Index (VIX)")
             if vix_val:
                 st.write(f"**{round(vix_val,1)}**")
 
         col3, col4 = st.columns(2)
 
         with col3:
-            st.markdown("### 📉 RSI")
+            st.markdown("### 📉 Relative Strength Index (RSI)")
             st.write(f"**{rsi_val:.1f}**")
 
-            with st.expander("🔍 Full RSI Math"):
-                st.write(f"RS = {rs.iloc[-1]:.4f} → RSI = {rsi_val:.2f}")
+            with st.expander("🔍 RSI Full Calculation"):
+                last_delta = delta.iloc[-1]
+                last_gain = gain.iloc[-1]
+                last_loss = loss.iloc[-1]
+
+                st.write(f"""
+Delta = {last_delta:.4f}  
+Avg Gain = {last_gain:.4f}  
+Avg Loss = {last_loss:.4f}  
+
+RS = {rs.iloc[-1]:.4f}  
+RSI = {rsi_val:.2f}
+""")
 
         with col4:
-            st.markdown("### 📈 Trend")
+            st.markdown("### 📈 Trend (200-day Moving Average)")
             st.write(f"**{ma_slope:.2f}%**")
+
+            with st.expander("🔍 Trend Calculation"):
+                st.write(f"""
+MA today = {ma200.iloc[-1]:.2f}  
+MA 20d ago = {prev:.2f}  
+
+Slope = {ma_slope:.2f}%
+""")
 
         # ----------------------------------
         # CHART
