@@ -371,7 +371,7 @@ if ticker:
             st.warning("⚠️ REDUCE → Trim positions")
         
         else:
-    st.error("🚨 SELL → Exit / protect capital")
+            st.error("🚨 SELL → Exit / protect capital")
 
         with st.expander("🔍 Why this recommendation?", expanded=False):
             st.write("""
