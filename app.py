@@ -234,14 +234,27 @@ if ticker:
         # ----------------------------------
         # BUY DECISION
         # ----------------------------------
+        # ----------------------------------
+        # BUY DECISION (timing-aware)
+        # ----------------------------------
         st.subheader("📥 Buy Decision")
         
-        if score >= 70:
-            st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
-        elif score >= 40:
-            st.info(f"⚖️ STEADY BUY → Invest ~ {baseline}")
-        else:
-            st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
+        if state == "WAIT":
+            st.warning("⏳ WAIT → Let the market stabilize before buying")
+        
+        elif state == "WATCH":
+            if score >= 70:
+                st.info(f"⚖️ PREPARE → Good setup, wait for confirmation (~ {baseline})")
+            else:
+                st.info("🔍 WATCH → No strong entry yet")
+        
+        else:  # TRIGGER
+            if score >= 70:
+                st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
+            elif score >= 40:
+                st.info(f"⚖️ STEADY BUY → Invest ~ {baseline}")
+            else:
+                st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
 
         # ----------------------------------
         # SELL TIMING UI
