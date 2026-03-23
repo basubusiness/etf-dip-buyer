@@ -104,7 +104,20 @@ if ticker:
         df = get_data(ticker)
         yt = yf.Ticker(ticker)
 
+        if df is None or df.empty or "Close" not in df:
+            st.error("❌ No usable market data found for this asset")
+            st.markdown("👉 Try another listing (different exchange) or ticker")
+            st.stop()
+        
         close = df["Close"]
+        # ----------------------------------
+        # EMPTY DATA CHECK
+        # ----------------------------------
+        
+        if close.dropna().empty:
+            st.error("❌ Price data exists but contains no valid values")
+            st.stop()
+            
         cur_p = float(close.iloc[-1])
 
         # ----------------------------------
