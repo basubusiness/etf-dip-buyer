@@ -172,13 +172,13 @@ if ticker:
         yf_link = f"https://finance.yahoo.com/quote/{ticker}"
 
         st.caption(f"""
-Ticker: {ticker}  
-ISIN: {isin if isin else "Not available"}  
-🔗 {yf_link}
+Ticker: {ticker}  🔗 {yf_link}
+ISIN: {isin if isin st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}") else "Not available"}  
+
 """)
 
-        if isin:
-            st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
+      
+            
 
         score = 0
         if fg_val < 35: score += 40
