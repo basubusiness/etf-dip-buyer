@@ -3,8 +3,8 @@ import yfinance as yf
 import pandas as pd
 import requests
 
-st.set_page_config(page_title="ETF Dip-Terminal v3.1", layout="wide")
-st.title("🏹 ETF Dip-Terminal v3.1")
+st.set_page_config(page_title="ETF Dip-Terminal v3.2", layout="wide")
+st.title("🏹 ETF Dip-Terminal v3.2")
 
 ticker = None
 isin = None
@@ -115,6 +115,7 @@ if ticker:
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs = gain / loss.replace(0, 0.001)
         rsi_val = float((100 - (100 / (1 + rs))).iloc[-1])
+        rsi_prev = float((100 - (100 / (1 + rs))).iloc[-2])
 
         # Trend
         prev = ma200.iloc[-20]
@@ -124,20 +125,15 @@ if ticker:
         vix_val, vix_change = get_vix()
 
         # ----------------------------------
-        # ENTRY TIMING CORE
+        # ENTRY TIMING
         # ----------------------------------
         price_change = (close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100
-
-        rsi_prev = float((100 - (100 / (1 + rs))).iloc[-2])
         rsi_rising = rsi_val > rsi_prev
-
         trend_weak = ma_slope <= 0
 
-        # Volatility-based threshold
         volatility = close.pct_change().rolling(20).std().iloc[-1] * 100
         trigger_threshold = max(1.0, volatility * 1.5)
 
-        # State logic
         if rsi_val < 35 and trend_weak:
             state = "WAIT"
         elif price_change > trigger_threshold and rsi_rising:
@@ -174,63 +170,27 @@ ISIN: {isin if isin else "Not available"}
         if state == "WAIT":
             st.warning("🟡 WAIT → Market still falling")
         elif state == "WATCH":
-            st.info("🔵 WATCH → Stabilizing phase")
+            st.info("🔵 WATCH → Stabilizing")
         else:
-            st.success("🟢 TRIGGER → Reversal signal")
+            st.success("🟢 TRIGGER → Reversal")
 
-        st.markdown("### 🔭 What would trigger a BUY?")
-        st.write(f"""
-- Price rises **~{trigger_threshold:.2f}% or more**
-- RSI starts rising
-- Price holds above recent low
-
-👉 Confirms **buyer strength**
-""")
-
-        # ----------------------------------
-        # 🔍 FULL EXPLANATION (UPGRADED)
-        # ----------------------------------
-        with st.expander("🔍 Entry Timing — Full Explanation"):
-
-            st.markdown("### 1️⃣ Price Movement")
+        with st.expander("🔍 Entry Timing Explanation"):
             st.write(f"""
-({close.iloc[-1]:.2f} - {close.iloc[-2]:.2f}) / {close.iloc[-2]:.2f}
-= **{price_change:.2f}%**
-""")
+Price Change = {price_change:.2f}%  
+Volatility = {volatility:.2f}%  
+Threshold = {trigger_threshold:.2f}%
 
-            st.markdown("### 2️⃣ Volatility")
-            st.write(f"""
-Volatility ≈ **{volatility:.2f}%**
-
-→ Typical daily move
-""")
-
-            st.markdown("### 3️⃣ Trigger Threshold")
-            st.write(f"""
-Threshold = max(1%, 1.5 × volatility)
-
-= **{trigger_threshold:.2f}%**
-""")
-
-            st.markdown("### 4️⃣ RSI Momentum")
-            st.write(f"""
-Previous RSI = {rsi_prev:.2f}  
-Current RSI = {rsi_val:.2f}
-
+RSI Prev = {rsi_prev:.2f} → Now = {rsi_val:.2f}  
 RSI Rising = {rsi_rising}
-""")
 
-            st.markdown("### 5️⃣ Trend")
-            st.write(f"""
 Trend slope = {ma_slope:.2f}%  
 Trend weak = {trend_weak}
+
+➡️ Final State = {state}
 """)
 
-            st.markdown("### 🧠 Final State")
-            st.write(f"➡️ **{state}**")
-
         # ----------------------------------
-        # FINAL BUY DECISION
+        # FINAL DECISION
         # ----------------------------------
         if score >= 70:
             st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
@@ -239,41 +199,88 @@ Trend weak = {trend_weak}
         else:
             st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
 
-        # Adaptive explanation
-        is_bond = any(x in asset_name for x in ["bond", "treasury", "inflation"])
-
-        if is_bond:
-            st.caption(f"Driven by Momentum (RSI {rsi_val:.1f}) + Trend ({ma_slope:.2f}%)")
-        else:
-            st.caption(f"Driven by Sentiment (Fear {fg_val}) + RSI ({rsi_val:.1f}) + Trend ({ma_slope:.2f}%)")
-
         st.divider()
 
         # ----------------------------------
-        # SIGNALS
+        # SIGNALS WITH FULL EXPLANATION
         # ----------------------------------
         st.subheader("🧠 Market Signals")
 
         col1, col2 = st.columns(2)
 
+        # Fear & Greed
         with col1:
             st.markdown("### 😨 Fear & Greed Index")
             st.write(f"**{fg_val}**")
 
+            with st.expander("🔍 Explanation"):
+                st.write("""
+0–25 → Extreme Fear (best opportunities)  
+25–50 → Fear  
+50–75 → Greed  
+75–100 → Extreme Greed (overvalued)
+""")
+
+        # VIX
         with col2:
-            st.markdown("### 📊 VIX")
+            st.markdown("### 📊 Volatility Index (VIX)")
             if vix_val:
                 st.write(f"**{round(vix_val,1)}**")
 
+                with st.expander("🔍 Explanation"):
+                    st.write(f"""
+VIX = market volatility expectation
+
+Current = {vix_val:.1f}  
+Change = {vix_change:.2f}
+
+High VIX → fear  
+Rising VIX → increasing fear  
+""")
+
         col3, col4 = st.columns(2)
 
+        # RSI FULL
         with col3:
-            st.markdown("### 📉 RSI")
+            st.markdown("### 📉 RSI (Momentum)")
             st.write(f"**{rsi_val:.1f}**")
 
+            with st.expander("🔍 Full RSI Calculation"):
+                st.write(f"""
+Delta = {delta.iloc[-1]:.4f}
+
+Avg Gain = {gain.iloc[-1]:.4f}  
+Avg Loss = {loss.iloc[-1]:.4f}
+
+RS = {rs.iloc[-1]:.4f}
+
+RSI = 100 - (100 / (1 + RS))  
+= {rsi_val:.2f}
+
+Interpretation:
+<30 → Oversold  
+30–70 → Neutral  
+>70 → Overbought
+""")
+
+        # TREND FULL
         with col4:
-            st.markdown("### 📈 Trend (200D MA)")
+            st.markdown("### 📈 Trend (200-day MA)")
             st.write(f"**{ma_slope:.2f}%**")
+
+            with st.expander("🔍 Full Trend Math"):
+                st.write(f"""
+MA Today = {ma200.iloc[-1]:.2f}  
+MA 20d Ago = {prev:.2f}
+
+Slope = (Today - Past) / Past  
+= {ma_slope:.2f}%
+
+Interpretation:
+Positive → Uptrend  
+Negative → Downtrend  
+Magnitude → strength
+""")
 
         # ----------------------------------
         # CHART
