@@ -223,9 +223,10 @@ ISIN: {isin if isin else "Not available"}
         Average Loss = mean of all losses over 14 days  
         
         RS = Average Gain / Average Loss
+        Based on this:
         
-        Previous RS = {rs_prev:.4f}  
-        Current RS = {rs.iloc[-1]:.4f}
+        Previous (yesterday's) RS = {rs_prev:.4f}  
+        Current (today's) RS = {rs.iloc[-1]:.4f}
         
         RSI formula:
         RSI = 100 - (100 / (1 + RS))
@@ -233,7 +234,7 @@ ISIN: {isin if isin else "Not available"}
         Previous RSI = {rsi_prev:.2f}  
         Current RSI = {rsi_val:.2f}
         
-        RSI Rising = {rsi_rising}
+        Accordingly, RSI Rising = {rsi_rising}
         
         👉 This tells us whether selling pressure is reducing
         
