@@ -212,8 +212,17 @@ ISIN: {isin if isin else "Not available"}
         
         ### 4️⃣ RSI Momentum (How it's derived)
         
-        RS (Relative Strength) is computed as:
-        RS = Avg Gain / Avg Loss (14-day)
+        RS (Relative Strength) compares upward vs downward price moves over the last 14 days.
+
+        For each day:
+        - If price goes up → that amount counts as "Gain"
+        - If price goes down → that amount counts as "Loss"
+        
+        Then:
+        Average Gain = mean of all gains over 14 days  
+        Average Loss = mean of all losses over 14 days  
+        
+        RS = Average Gain / Average Loss
         
         Previous RS = {rs_prev:.4f}  
         Current RS = {rs.iloc[-1]:.4f}
