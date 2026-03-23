@@ -251,7 +251,7 @@ if ticker:
         if sell_state == "WAIT":
             st.info("🟡 HOLD → Momentum still strong")
         elif sell_state == "WATCH":
-            st.warning("🔵 WATCH → Weakness starting")
+            st.warning("🔵 WATCH → Price starting to fall")
         else:
             st.error("🔴 SELL → Downtrend starting")
 
