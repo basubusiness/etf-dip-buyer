@@ -182,6 +182,7 @@ if ticker:
         # DECISION
         # ----------------------------------
         st.subheader("🎯 Decision")
+        st.caption("Buy and Sell signals are independent. Use based on your portfolio allocation.")
 
         yf_link = f"https://finance.yahoo.com/quote/{ticker}"
 
@@ -229,6 +230,19 @@ if ticker:
         else:
             st.success("🟢 TRIGGER → Reversal")
 
+
+        # ----------------------------------
+        # BUY DECISION
+        # ----------------------------------
+        st.subheader("📥 Buy Decision")
+        
+        if score >= 70:
+            st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
+        elif score >= 40:
+            st.info(f"⚖️ STEADY BUY → Invest ~ {baseline}")
+        else:
+            st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
+
         # ----------------------------------
         # SELL TIMING UI
         # ----------------------------------
@@ -240,6 +254,19 @@ if ticker:
             st.warning("🔵 WATCH → Weakness starting")
         else:
             st.error("🔴 SELL → Downtrend starting")
+
+        # ----------------------------------
+        # SELL DECISION
+        # ----------------------------------
+        st.subheader("📤 Sell Decision")
+        
+        if sell_score >= 70:
+            st.error("🚨 STRONG SELL → Consider reducing exposure significantly")
+        elif sell_score >= 40:
+            st.warning("⚠️ PARTIAL SELL → Trim positions")
+        else:
+            st.info("🟢 HOLD → No strong sell signal")
+            
 
         with st.expander("🔍 Entry Timing Explanation"):
             st.write(f"""
@@ -347,31 +374,7 @@ if ticker:
         - TRIGGER → confirmed reversal  
         """)
 
-        # ----------------------------------
-        # FINAL DECISION
-        # ----------------------------------
-        # ----------------------------------
-        # UNIFIED DECISION ENGINE
-        # ----------------------------------
-        # net_score = score - sell_score
-        net_score = (score * 1.2) - sell_score
-
-        st.subheader("🧭 Final Action")
         
-        if net_score >= 50:
-            st.success(f"🔥 STRONG BUY → Invest ~ {baseline * 2}")
-        
-        elif net_score >= 15:
-            st.info(f"⚖️ BUY → Invest ~ {baseline}")
-        
-        elif net_score > -15:
-            st.info("🟢 HOLD → No strong edge")
-        
-        elif net_score > -50:
-            st.warning("⚠️ REDUCE → Trim positions")
-        
-        else:
-            st.error("🚨 SELL → Exit / protect capital")
 
         with st.expander("🔍 Why this recommendation?", expanded=False):
             st.write("""
