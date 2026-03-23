@@ -268,7 +268,7 @@ if ticker:
             st.info("🟢 HOLD → No strong sell signal")
             
 
-        with st.expander("🔍 Entry Timing Explanation"):
+        with st.expander("🔍 Timing Explanation"):
             st.write(f"""
         ### 1️⃣ Price Movement
         Price Change = (Today - Yesterday) / Yesterday  
