@@ -300,6 +300,20 @@ ISIN: {isin if isin else "Not available"}
         else:
             st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
 
+        st.caption("""
+        This recommendation is based on a combination of:
+        
+        - Market sentiment (Fear & Greed)  
+        - Momentum (RSI)  
+        - Long-term trend (200-day average)  
+        
+        👉 Investment level is adjusted based on signal strength of the above three metrics:
+
+        - Strong buy signals (fear + oversold + healthy trend) → invest more  
+        - Mixed signals → invest normal amount  
+        - Weak signals → reduce exposure  
+        """)
+
         st.divider()
 
         # ----------------------------------
