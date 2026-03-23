@@ -163,6 +163,20 @@ if ticker:
             state = "TRIGGER"
         else:
             state = "WATCH"
+        
+        # ----------------------------------
+        # SELL TIMING (ADD THIS BELOW)
+        # ----------------------------------
+        price_drop = -price_change
+        rsi_falling = rsi_val < rsi_prev
+        trend_strong = ma_slope > 0
+        
+        if rsi_val > 65 and trend_strong:
+            sell_state = "WAIT"
+        elif price_drop > trigger_threshold and rsi_falling:
+            sell_state = "TRIGGER"
+        else:
+            sell_state = "WATCH"
 
         # ----------------------------------
         # DECISION
@@ -186,6 +200,15 @@ if ticker:
         if cur_p < ma200.iloc[-1]: score += 30
 
         # ----------------------------------
+        # SELL SCORE (minimal mirror logic)
+        # ----------------------------------
+        sell_score = 0
+        if fg_val > 65: sell_score += 40
+        if rsi_val > 65: sell_score += 30
+        if cur_p > ma200.iloc[-1]: sell_score += 30
+        
+        
+        # ----------------------------------
         # ENTRY TIMING UI
         # ----------------------------------
         st.subheader("⏱ Entry Timing")
@@ -205,6 +228,18 @@ if ticker:
             st.info("🔵 WATCH → Stabilizing")
         else:
             st.success("🟢 TRIGGER → Reversal")
+
+        # ----------------------------------
+        # SELL TIMING UI
+        # ----------------------------------
+        st.subheader("📤 Exit Timing")    
+        
+        if sell_state == "WAIT":
+            st.info("🟡 HOLD → Momentum still strong")
+        elif sell_state == "WATCH":
+            st.warning("🔵 WATCH → Weakness starting")
+        else:
+            st.error("🔴 SELL → Downtrend starting")
 
         with st.expander("🔍 Entry Timing Explanation"):
             st.write(f"""
@@ -321,6 +356,16 @@ if ticker:
             st.info(f"⚖️ STEADY BUY → Invest ~ {baseline}")
         else:
             st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
+
+        # ----------------------------------
+        # SELL DECISION
+        # ----------------------------------
+        if sell_score >= 70:
+            st.error("🚨 STRONG SELL → Consider reducing exposure significantly")
+        elif sell_score >= 40:
+            st.warning("⚠️ PARTIAL SELL → Trim positions")
+        else:
+            st.info("🟢 HOLD → No strong sell signal")
 
         with st.expander("🔍 Why this recommendation?", expanded=False):
             st.write("""
