@@ -328,9 +328,9 @@ ISIN: {isin if isin else "Not available"}
             st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
         
             if vix_val:
-                st.write(f"**{round(vix_val,1)}**")
+                st.write(f"**{round(vix_val,1)}**") + " " + {vix_change:.2f} + "%"
         
-                with st.expander("🔍 Explanation & Source"):
+                with st.expander("🔍 Explanation"):
                     st.write(f"""
         **What is VIX?**  
         VIX measures expected volatility of S&P 500 over next 30 days.
