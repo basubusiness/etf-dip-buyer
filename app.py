@@ -111,10 +111,10 @@ if ticker:
         # DATA QUALITY CHECK
         # ----------------------------------
         if close.nunique() < 5:
-            st.warning("⚠️ Price has barely moved recently — signals may be unreliable")
+            st.warning("⚠️ Price has barely moved recently — signals may be unreliable - see if another asset has suitable data under 'Select Asset' dropdown from the left pane")
         
         if close.isna().sum() > len(close) * 0.2:
-            st.warning("⚠️ Missing data detected — indicators may be unreliable")
+            st.warning("⚠️ Missing data detected — indicators may be unreliable - see if another asset has suitable data under 'Select Asset' dropdown from the left pane")
 
         ma200 = close.rolling(200).mean()
 
