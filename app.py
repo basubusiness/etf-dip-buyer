@@ -349,6 +349,7 @@ if ticker:
         # Fear & Greed
         with col1:
             st.markdown("### 😨 Fear & Greed Index")
+            st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
             st.write(f"**{fg_val}**")
 
             with st.expander("🔍 Explanation"):
