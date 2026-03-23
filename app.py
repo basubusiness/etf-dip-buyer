@@ -171,13 +171,12 @@ if ticker:
 
         yf_link = f"https://finance.yahoo.com/quote/{ticker}"
 
-        st.caption(f"""
-        Ticker: {ticker}  🔗 {yf_link}
-        ISIN: {isin if isin else "Not available"}
-        """)
+        st.caption(f"Ticker: {ticker}  |  🔗 {yf_link}")
 
         if isin:
-            st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
+            st.caption(f"ISIN: {isin}   |   🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
+        else:
+            st.caption("ISIN: Not available")
       
             
 
