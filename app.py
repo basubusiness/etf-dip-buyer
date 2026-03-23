@@ -236,25 +236,50 @@ ISIN: {isin if isin else "Not available"}
         
         Accordingly, RSI Rising = {rsi_rising}
         
-        👉 This tells us whether selling pressure is reducing
+        👉 This tells us whether selling pressure is easing or intensifying
+
+        - RSI rising → TRUE - selling pressure easing
+        - RSI rising → FALSE - selling pressure increasing
         
         ---
         
         ### 5️⃣ Trend Context
-        Trend slope (200D MA) = **{ma_slope:.2f}%**  
+        Trend slope (200D Mving Average - MA) = **{ma_slope:.2f}%**  
         Trend weak = {trend_weak}
         
-        👉 Avoid buying in structural downtrends
+        👉 Trend weak helps distinguish between market regimes:
+
+        - True  → Weak market (falling trend → higher risk)  
+        - False → Healthy dip (rising trend → better buying opportunity)
         
         ---
         
         ### 🧠 How Final State is decided
         
-        We combine 3 conditions:
+        We combine 3 signals to understand market behavior:
+
+        1. Price movement → Are buyers stepping in today?  
+        2. RSI momentum → Is selling pressure increasing or easing?  
+        3. Long-term trend → Is the broader market healthy or weakening?  
         
-        1. Price vs Threshold → {price_change:.2f}% vs {trigger_threshold:.2f}%  
-        2. RSI Momentum → Rising = {rsi_rising}  
-        3. Trend → Weak = {trend_weak}
+        👉 Together, these tell us:
+        
+        - Short-term direction (falling or stabilizing)  
+        - Long-term strength (healthy trend or structural decline)  
+        
+        👉 Based on this combination, the system classifies the market as:
+        WAIT → Still falling  
+        WATCH → Stabilizing  
+        TRIGGER → Reversal starting  
+
+        👉 Key idea:
+        We prefer to buy when:
+        - Short-term weakness starts reversing  
+        - AND long-term trend remains intact  
+        
+        This avoids:
+        - Buying too early in falling markets  
+        - Missing strong recoveries
         
         ---
         
@@ -310,8 +335,6 @@ ISIN: {isin if isin else "Not available"}
         **What is VIX?**  
         VIX measures expected volatility of S&P 500 over next 30 days.
         
-        **Data Source**  
-        Yahoo Finance (^VIX)
         
         **Change Calculation**  
         We compare today's value vs ~5 trading days ago:
@@ -337,21 +360,63 @@ ISIN: {isin if isin else "Not available"}
 
             with st.expander("🔍 Full RSI Calculation"):
                 st.write(f"""
-Delta = {delta.iloc[-1]:.4f}
-
-Avg Gain = {gain.iloc[-1]:.4f}  
-Avg Loss = {loss.iloc[-1]:.4f}
-
-RS = {rs.iloc[-1]:.4f}
-
-RSI = 100 - (100 / (1 + RS))  
-= {rsi_val:.2f}
-
-Interpretation:
-<30 → Oversold  
-30–70 → Neutral  
->70 → Overbought
-""")
+            ### What RSI measures
+            RSI compares how strong upward vs downward price moves have been over the last 14 days.
+            
+            ---
+            
+            ### Step 1: Daily Price Change (Delta)
+            Delta = Today Close - Yesterday Close  
+            = **{delta.iloc[-1]:.4f}**
+            
+            👉 If positive → counts as Gain  
+            👉 If negative → counts as Loss  
+            
+            ---
+            
+            ### Step 2: Average Gains vs Losses (14 days)
+            
+            Average Gain = **{gain.iloc[-1]:.4f}**  
+            Average Loss = **{loss.iloc[-1]:.4f}**
+            
+            👉 Over the last 14 days:
+            - Gains are averaged from positive days  
+            - Losses are averaged from negative days  
+            
+            👉 Here, losses are larger → market has been falling
+            
+            ---
+            
+            ### Step 3: Relative Strength (RS)
+            
+            RS = Avg Gain / Avg Loss  
+            = {gain.iloc[-1]:.4f} / {loss.iloc[-1]:.4f}  
+            = **{rs.iloc[-1]:.4f}**
+            
+            👉 RS < 1 → losses dominate  
+            👉 RS > 1 → gains dominate  
+            
+            ---
+            
+            ### Step 4: RSI Conversion
+            
+            RSI = 100 - (100 / (1 + RS))  
+            
+            = 100 - (100 / (1 + {rs.iloc[-1]:.4f}))  
+            = **{rsi_val:.2f}**
+            
+            ---
+            
+            ### Step 5: Interpretation
+            
+            RSI = {rsi_val:.2f}
+            
+            - <30 → Oversold (strong selling, possible rebound zone)  
+            - 30–70 → Neutral  
+            - >70 → Overbought (strong buying, may cool off)  
+            
+            👉 RSI is based on a 14-day average, so it reflects trend — not just today
+            """)
 
         # TREND FULL
         with col4:
@@ -369,7 +434,12 @@ Slope = (Today - Past) / Past
 Interpretation:
 Positive → Uptrend  
 Negative → Downtrend  
-Magnitude → strength
+Magnitude tells you how strong the trend is:
+
+~0% to 0.5%   → Flat / weak trend  
+0.5% to 2%    → Mild trend  
+2% to 5%      → Strong trend  
+>5%           → Very strong trend
 """)
 
         # ----------------------------------
