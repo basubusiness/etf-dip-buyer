@@ -130,11 +130,11 @@ if ticker:
         rsi_rising = rsi_val > rsi_prev
         trend_weak = ma_slope <= 0
 
-        # Dynamic threshold
+        # Dynamic volatility threshold
         volatility = close.pct_change().rolling(20).std().iloc[-1] * 100
         trigger_threshold = max(1.0, volatility * 1.5)
 
-        # State logic (FIXED ORDER)
+        # State logic
         if rsi_val < 35 and trend_weak:
             state = "WAIT"
         elif price_change > trigger_threshold and rsi_rising:
@@ -158,8 +158,107 @@ ISIN: {isin if isin else "Not available"}
         if isin:
             st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
 
-        # Score (unchanged for stability)
+        # Score (FIXED LINE)
         score = 0
         if fg_val < 35: score += 40
         if rsi_val < 40: score += 30
-        if cur_p < ma200.iloc
+        if cur_p < ma200.iloc[-1]: score += 30
+
+        # ----------------------------------
+        # ENTRY TIMING
+        # ----------------------------------
+        st.subheader("⏱ Entry Timing")
+
+        reasons = []
+
+        if price_change < 0:
+            reasons.append(f"Price falling ({price_change:.2f}%)")
+        else:
+            reasons.append(f"Price rising ({price_change:.2f}%)")
+
+        reasons.append("RSI rising" if rsi_rising else "RSI still weak")
+        reasons.append("Trend supportive" if not trend_weak else "Trend weak")
+
+        if state == "WAIT":
+            st.warning("🟡 WAIT → Market still falling")
+        elif state == "WATCH":
+            st.info("🔵 WATCH → Stabilizing")
+        else:
+            st.success("🟢 TRIGGER → Reversal detected")
+
+        for r in reasons:
+            st.write(f"- {r}")
+
+        st.markdown("### 🔭 What would trigger a BUY?")
+        st.write(f"""
+- Price increases by **~{trigger_threshold:.2f}%**
+- RSI rising
+- Price holds above recent low
+""")
+
+        # ----------------------------------
+        # MATH
+        # ----------------------------------
+        with st.expander("🔍 Entry Timing Math"):
+            st.write(f"""
+Price Change = {price_change:.2f}%  
+RSI prev = {rsi_prev:.2f} → now {rsi_val:.2f}  
+Trend slope = {ma_slope:.2f}%  
+Threshold = {trigger_threshold:.2f}%
+""")
+
+        # ----------------------------------
+        # FINAL DECISION
+        # ----------------------------------
+        if score >= 70:
+            st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
+        elif score >= 40:
+            st.info(f"⚖️ STEADY BUY → Invest ~ {baseline}")
+        else:
+            st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
+
+        st.divider()
+
+        # ----------------------------------
+        # SIGNALS
+        # ----------------------------------
+        st.subheader("🧠 Market Signals")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("### 😨 Fear & Greed Index")
+            st.write(f"**{fg_val}**")
+
+        with col2:
+            st.markdown("### 📊 VIX")
+            if vix_val:
+                st.write(f"**{round(vix_val,1)}**")
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            st.markdown("### 📉 RSI")
+            st.write(f"**{rsi_val:.1f}**")
+
+            with st.expander("🔍 Full RSI Math"):
+                st.write(f"RS = {rs.iloc[-1]:.4f} → RSI = {rsi_val:.2f}")
+
+        with col4:
+            st.markdown("### 📈 Trend")
+            st.write(f"**{ma_slope:.2f}%**")
+
+        # ----------------------------------
+        # CHART
+        # ----------------------------------
+        st.subheader("📊 Price History (1Y)")
+
+        chart_data = pd.DataFrame({
+            "Price": close,
+            "200D MA": ma200
+        })
+
+        st.line_chart(chart_data)
+
+else:
+    st.info("Enter a ticker to begin")
