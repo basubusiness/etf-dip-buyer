@@ -115,7 +115,8 @@ if ticker:
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs = gain / loss.replace(0, 0.001)
         rsi_val = float((100 - (100 / (1 + rs))).iloc[-1])
-        rsi_prev = float((100 - (100 / (1 + rs))).iloc[-2])
+        rs_prev = rs.iloc[-2]
+        rsi_prev = float(100 - (100 / (1 + rs_prev)))
 
         # Trend
         prev = ma200.iloc[-20]
@@ -166,6 +167,15 @@ ISIN: {isin if isin else "Not available"}
         # ENTRY TIMING UI
         # ----------------------------------
         st.subheader("⏱ Entry Timing")
+        st.caption(f"""
+        Context:
+        
+        - Price move: {price_change:.2f}% (vs threshold {trigger_threshold:.2f}%)
+        - RSI momentum: {"Improving" if rsi_rising else "Weakening"}
+        - Trend: {"Supportive" if not trend_weak else "Weak"}
+        
+        👉 Decision is based on alignment of these three signals
+        """)
 
         if state == "WAIT":
             st.warning("🟡 WAIT → Market still falling")
@@ -176,18 +186,74 @@ ISIN: {isin if isin else "Not available"}
 
         with st.expander("🔍 Entry Timing Explanation"):
             st.write(f"""
-Price Change = {price_change:.2f}%  
-Volatility = {volatility:.2f}%  
-Threshold = {trigger_threshold:.2f}%
-
-RSI Prev = {rsi_prev:.2f} → Now = {rsi_val:.2f}  
-RSI Rising = {rsi_rising}
-
-Trend slope = {ma_slope:.2f}%  
-Trend weak = {trend_weak}
-
-➡️ Final State = {state}
-""")
+        ### 1️⃣ Price Movement
+        Price Change = (Today - Yesterday) / Yesterday  
+        = **{price_change:.2f}%**
+        
+        👉 Shows immediate direction of market
+        
+        ---
+        
+        ### 2️⃣ Volatility (Normal Movement)
+        Volatility = std dev of last 20 daily returns  
+        = **{volatility:.2f}%**
+        
+        👉 Typical daily fluctuation
+        
+        ---
+        
+        ### 3️⃣ Trigger Threshold
+        Threshold = max(1%, 1.5 × volatility)  
+        = **{trigger_threshold:.2f}%**
+        
+        👉 Filters out noise — only meaningful moves count
+        
+        ---
+        
+        ### 4️⃣ RSI Momentum (How it's derived)
+        
+        RS (Relative Strength) is computed as:
+        RS = Avg Gain / Avg Loss (14-day)
+        
+        Previous RS = {rs_prev:.4f}  
+        Current RS = {rs.iloc[-1]:.4f}
+        
+        RSI formula:
+        RSI = 100 - (100 / (1 + RS))
+        
+        Previous RSI = {rsi_prev:.2f}  
+        Current RSI = {rsi_val:.2f}
+        
+        RSI Rising = {rsi_rising}
+        
+        👉 This tells us whether selling pressure is reducing
+        
+        ---
+        
+        ### 5️⃣ Trend Context
+        Trend slope (200D MA) = **{ma_slope:.2f}%**  
+        Trend weak = {trend_weak}
+        
+        👉 Avoid buying in structural downtrends
+        
+        ---
+        
+        ### 🧠 How Final State is decided
+        
+        We combine 3 conditions:
+        
+        1. Price vs Threshold → {price_change:.2f}% vs {trigger_threshold:.2f}%  
+        2. RSI Momentum → Rising = {rsi_rising}  
+        3. Trend → Weak = {trend_weak}
+        
+        ---
+        
+        ➡️ Final State = **{state}**
+        
+        - WAIT → falling + weak trend  
+        - WATCH → stabilizing  
+        - TRIGGER → confirmed reversal  
+        """)
 
         # ----------------------------------
         # FINAL DECISION
@@ -221,22 +287,36 @@ Trend weak = {trend_weak}
 75–100 → Extreme Greed (overvalued)
 """)
 
-        # VIX
+        # VIX 
         with col2:
             st.markdown("### 📊 Volatility Index (VIX)")
+            st.markdown("🔗 https://finance.yahoo.com/quote/%5EVIX")
+        
             if vix_val:
                 st.write(f"**{round(vix_val,1)}**")
-
-                with st.expander("🔍 Explanation"):
+        
+                with st.expander("🔍 Explanation & Source"):
                     st.write(f"""
-VIX = market volatility expectation
+        **What is VIX?**  
+        VIX measures expected volatility of S&P 500 over next 30 days.
+        
+        **Data Source**  
+        Yahoo Finance (^VIX)
+        
+        **Change Calculation**  
+        We compare today's value vs ~5 trading days ago:
+        
+        Change = Current - Value 5 days ago  
+        = {vix_val:.2f} - {(vix_val - vix_change):.2f}  
+        = {vix_change:.2f}
+        
+        **Interpretation**
+        - High VIX → fear  
+        - Rising VIX → fear increasing  
+        - Falling VIX → calming market
+        """)
 
-Current = {vix_val:.1f}  
-Change = {vix_change:.2f}
-
-High VIX → fear  
-Rising VIX → increasing fear  
-""")
+        
 
         col3, col4 = st.columns(2)
 
