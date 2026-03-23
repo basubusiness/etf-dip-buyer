@@ -113,7 +113,7 @@ if ticker:
         if close.nunique() < 5:
             st.warning("⚠️ Price has barely moved recently — signals may be unreliable")
         
-        elif close.isna().sum() > len(close) * 0.2:
+        if close.isna().sum() > len(close) * 0.2:
             st.warning("⚠️ Missing data detected — indicators may be unreliable")
 
         ma200 = close.rolling(200).mean()
