@@ -122,18 +122,22 @@ if ticker:
         vix_val, vix_change = get_vix()
 
         # ----------------------------------
-        # 🔥 NEW: TRIGGER SYSTEM
+        # 🔥 TRIGGER SYSTEM (FIXED)
         # ----------------------------------
         price_change = (close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100
-        rsi_prev = float((100 - (100 / (1 + (gain / loss.replace(0, 0.001))))).iloc[-2])
+        rsi_prev = float((100 - (100 / (1 + rs))).iloc[-2])
 
         rsi_rising = rsi_val > rsi_prev
         trend_weak = ma_slope <= 0
 
-        # State logic
+        # Dynamic threshold
+        volatility = close.pct_change().rolling(20).std().iloc[-1] * 100
+        trigger_threshold = max(1.0, volatility * 1.5)
+
+        # State logic (FIXED ORDER)
         if rsi_val < 35 and trend_weak:
             state = "WAIT"
-        elif price_change > 1.5 and rsi_rising:
+        elif price_change > trigger_threshold and rsi_rising:
             state = "TRIGGER"
         else:
             state = "WATCH"
@@ -154,153 +158,8 @@ ISIN: {isin if isin else "Not available"}
         if isin:
             st.caption(f"🔗 https://www.justetf.com/en/etf-profile.html?isin={isin}")
 
-        # Base score
+        # Score (unchanged for stability)
         score = 0
         if fg_val < 35: score += 40
         if rsi_val < 40: score += 30
-        if cur_p < ma200.iloc[-1]: score += 30
-
-        # ----------------------------------
-        # 🧠 ENTRY TIMING (ENHANCED)
-        # ----------------------------------
-        st.subheader("⏱ Entry Timing")
-        
-        # Explanation builder
-        reasons = []
-        
-        if price_change < 0:
-            reasons.append(f"Price is still falling ({price_change:.2f}%)")
-        else:
-            reasons.append(f"Price rising ({price_change:.2f}%)")
-        
-        if not rsi_rising:
-            reasons.append("RSI not improving (momentum still weak)")
-        else:
-            reasons.append("RSI rising (momentum improving)")
-        
-        if trend_weak:
-            reasons.append("Long-term trend weak or flat")
-        else:
-            reasons.append("Long-term trend supportive")
-        
-        # STATE DISPLAY
-        if state == "WAIT":
-            st.warning("🟡 WAIT → Market still falling, avoid early entry")
-        
-            st.write("**Why:**")
-            for r in reasons:
-                st.write(f"- {r}")
-        
-        elif state == "WATCH":
-            st.info("🔵 WATCH → Stabilizing, monitor closely")
-        
-            st.write("**Why:**")
-            for r in reasons:
-                st.write(f"- {r}")
-        
-        elif state == "TRIGGER":
-            st.success("🟢 TRIGGER → Reversal detected, consider entry")
-        
-            st.write("**Why:**")
-            for r in reasons:
-                st.write(f"- {r}")
-        
-        # ----------------------------------
-        # 🎯 WHAT TO WATCH NEXT (NEW)
-        # ----------------------------------
-        st.markdown("### 🔭 What would trigger a BUY?")
-        
-        st.write("""
-        - Price increases by **~1.5% or more in a day**
-        - RSI starts rising (momentum shift)
-        - Ideally, price holds above recent low
-        
-        👉 This indicates **buyers stepping in**
-        """)
-        
-        # ----------------------------------
-        # 🔍 MATH (TRANSPARENCY)
-        # ----------------------------------
-        with st.expander("🔍 Entry Timing Math"):
-        
-            st.write(f"""
-        **Price Change Calculation**
-        = (Today Close - Yesterday Close) / Yesterday Close  
-        = {price_change:.2f}%
-        
-        **RSI Direction**
-        Previous RSI = {rsi_prev:.2f}  
-        Current RSI = {rsi_val:.2f}  
-        RSI Rising = {rsi_rising}
-        
-        **Trend Check**
-        MA Slope = {ma_slope:.2f}%  
-        Trend Weak = {trend_weak}
-        
-        **Trigger Condition**
-        Price change > 1.5% AND RSI rising
-        
-        → Current State = {state}
-        """)
-        # ----------------------------------
-        # FINAL DECISION
-        # ----------------------------------
-        if score >= 70:
-            st.success(f"🔥 AGGRESSIVE BUY → Invest ~ {baseline * 2}")
-        elif score >= 40:
-            st.info(f"⚖️ STEADY BUY → Invest ~ {baseline}")
-        else:
-            st.warning(f"⚠️ CAUTION → Invest ~ {baseline * 0.5}")
-
-        st.caption(f"Driven by Fear ({fg_val}) + RSI ({rsi_val:.1f}) + Trend")
-
-        st.divider()
-
-        # ----------------------------------
-        # SIGNALS (unchanged)
-        # ----------------------------------
-        st.subheader("🧠 Market Signals")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.markdown("### 😨 Fear & Greed Index")
-            st.write(f"**{fg_val}**")
-            st.markdown("🔗 https://edition.cnn.com/markets/fear-and-greed")
-
-        with col2:
-            st.markdown("### 📊 Volatility Index (VIX)")
-            st.write(f"**{round(vix_val,1)}**")
-
-            if vix_change > 0:
-                st.warning(f"Rising (+{vix_change:.1f}) → increasing fear")
-            else:
-                st.success(f"Falling ({vix_change:.1f}) → calming market")
-
-        col3, col4 = st.columns(2)
-
-        with col3:
-            st.markdown("### 📉 Relative Strength Index (RSI)")
-            st.write(f"**{rsi_val:.1f}**")
-
-            with st.expander("🔍 Math"):
-                st.write(f"""
-RS = {rs.iloc[-1]:.2f}
-RSI = {rsi_val:.2f}
-""")
-
-        with col4:
-            st.markdown("### 📈 Long-term Trend (200-day Moving Average)")
-            st.write(f"**{ma_slope:.2f}%")
-
-        st.subheader("📊 Price History (1Y)")
-
-        chart_data = pd.DataFrame({
-            "Price": close,
-            "200D MA": ma200
-        })
-
-        st.line_chart(chart_data)
-
-else:
-    st.info("Enter a ticker to begin")
+        if cur_p < ma200.iloc
