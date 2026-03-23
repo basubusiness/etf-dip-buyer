@@ -226,7 +226,7 @@ if ticker:
         if state == "WAIT":
             st.warning("🟡 WAIT → Market still falling")
         elif state == "WATCH":
-            st.info("🔵 WATCH → Stabilizing")
+            st.info("🔵 WATCH → Price not falling anymore")
         else:
             st.success("🟢 TRIGGER → Reversal")
 
